@@ -32,6 +32,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="log"
+        options={{
+          title: 'Log',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="add-box" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }
