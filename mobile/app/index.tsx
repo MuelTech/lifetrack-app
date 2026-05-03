@@ -7,7 +7,7 @@ export default function WelcomeScreen() {
   const router = useRouter();
 
   const handleGetStarted = () => {
-    router.push('/create-profile');
+    router.push('/create-account');
   };
 
   return (
