@@ -19,7 +19,7 @@ export default function LoginScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color="#4800b2" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Sign In</Text>
+          <Text style={styles.headerTitle}>Back</Text>
         </View>
 
         <View style={styles.content}>
