@@ -1,0 +1,152 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+// ------------------------------------------------------
+// User & Profile
+// ------------------------------------------------------
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid // Matches Supabase auth.users ID
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile   Profile?
+  logs      Log[]
+  patterns  PatternResult[]
+}
+
+model Profile {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @unique @db.Uuid
+  nickname       String
+  yearLevel      String
+  section        String?
+  age            Int
+  sex            String
+  healthConcerns String[] // Optional chips stored as array of strings
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ------------------------------------------------------
+// Daily Lifestyle Logging
+// ------------------------------------------------------
+
+enum MealQuality {
+  BALANCED
+  JUNK
+  SKIPPED
+}
+
+enum ActivityType {
+  WALK
+  GYM
+  SPORTS
+  NONE
+}
+
+enum StressLevel {
+  LOW
+  MODERATE
+  HIGH
+}
+
+model Log {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  date           DateTime @db.Date // Ensures one log per calendar day
+
+  // Step 1: Sleep
+  sleptAt        DateTime
+  wokeUp         DateTime
+  sleepHours     Float
+
+  // Step 2: Food
+  breakfast      MealQuality
+  lunch          MealQuality
+  dinner         MealQuality
+  waterCups      Int
+
+  // Step 3: Activity
+  activityDuration Int          // in minutes (0-120)
+  activityType     ActivityType
+
+  // Step 4: Screen time
+  studyHours       Float
+  screenTimeHours  Float
+
+  // Step 5: Stress
+  stressLevel      StressLevel
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date]) // Enforces FR-03-2: one log entry per user per calendar day
+}
+
+// ------------------------------------------------------
+// Pattern Detection Engine
+// ------------------------------------------------------
+
+enum LifestyleStatus {
+  BALANCED
+  NEEDS_IMPROVEMENT
+  UNHEALTHY_PATTERN_DETECTED
+}
+
+model PatternResult {
+  id                      String   @id @default(uuid()) @db.Uuid
+  userId                  String   @db.Uuid
+  evaluatedDate           DateTime @db.Date
+
+  lifestyleStatus         LifestyleStatus
+  
+  // Boolean flags for specific patterns detected in this evaluation run
+  hasSleepDeprivation     Boolean  @default(false)
+  hasSedentaryLifestyle   Boolean  @default(false)
+  hasBurnoutRisk          Boolean  @default(false)
+  hasPoorEatingHabit      Boolean  @default(false)
+
+  createdAt               DateTime @default(now())
+
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ------------------------------------------------------
+// Health Guidance Library
+// ------------------------------------------------------
+
+enum ArticleCategory {
+  NUTRITION
+  SLEEP_HYGIENE
+  STRESS_MANAGEMENT
+  EXERCISE
+  EARLY_SIGNS
+}
+
+model Article {
+  id          String         @id @default(uuid()) @db.Uuid
+  title       String
+  category    ArticleCategory
+  preview     String
+  content     String         @db.Text
+  readTime    Int            // in minutes
+  featured    Boolean        @default(false)
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
