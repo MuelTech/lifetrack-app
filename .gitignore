@@ -10,6 +10,7 @@ yarn-error.log*
 .pnp.*
 .pnp.js
 .github/
+.agents/
 
 # Environment variables
 .env

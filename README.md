@@ -38,14 +38,14 @@ lifetrack-app/
 *   Expo Go app on your physical device or an emulator/simulator setup
 
 ### 1. Backend Setup
-Navigate to the backend directory, install dependencies, and set up your database with Prisma.
+Navigate to the backend directory, install dependencies, set up your database, and start the development server.
 
 ```bash
 cd backend
 npm install
-# Configure your environment variables (.env) if necessary
+# Configure your environment variables (.env) with Supabase credentials
 npx prisma generate
-npm run dev # or the specific start script in your package.json
+npx tsx watch src/index.ts # Starts the server with hot-reloading
 ```
 
 ### 2. Mobile App Setup
@@ -56,6 +56,8 @@ cd mobile
 npm install
 npx expo start
 ```
+*Note for Android Emulator Users: The frontend is configured to target `http://10.0.2.2:3000` to correctly route local API requests to your machine's `localhost:3000`.*
+
 Scan the QR code shown in the terminal with the Expo Go app on your phone, or press `a` or `i` to open it in an Android Emulator or iOS Simulator.
 
 ## 📝 License

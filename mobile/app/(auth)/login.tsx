@@ -8,6 +8,49 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleLogin = async () => {
+    // Reset state
+    setErrorMsg('');
+    
+    // Basic validation
+    if (!email || !password) {
+      setErrorMsg('Please enter both email and password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // NOTE: Replace the IP address with your machine's local IP network address or API deployed URL.
+      // 10.0.2.2 works for Android Emulator accessing localhost.
+      const response = await fetch('http://192.168.40.53:3000/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to login');
+      }
+
+      console.log('Login successful:', data.session);
+      
+      // TODO: You may want to save the session token securely to an async storage (or Zustand) here
+      
+      // Proceed to the main tabs app
+      router.replace('/(tabs)');
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -75,12 +118,19 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
+            {errorMsg ? (
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            ) : null}
+
             <TouchableOpacity 
               style={styles.primaryButton}
-              onPress={() => router.replace('/(tabs)')}
+              onPress={handleLogin}
+              disabled={loading}
               activeOpacity={0.8}
             >
-              <Text style={styles.primaryButtonText}>Sign In</Text>
+              <Text style={styles.primaryButtonText}>
+                {loading ? 'Signing In...' : 'Sign In'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -210,8 +260,13 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans_700Bold',
     fontSize: 12,
     color: '#4800b2',
-  },
-  primaryButton: {
+  },  errorText: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    fontSize: 12,
+    color: '#ba1a1a',
+    marginBottom: 16,
+    textAlign: 'center',
+  },  primaryButton: {
     height: 56,
     backgroundColor: '#4800b2',
     borderRadius: 12,
