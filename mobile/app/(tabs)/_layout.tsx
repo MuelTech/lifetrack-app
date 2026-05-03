@@ -50,6 +50,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="guidance"
+        options={{
+          title: 'Guidance',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="psychology" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }
