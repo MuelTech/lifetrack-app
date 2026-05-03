@@ -154,7 +154,7 @@ export default function CreateProfileScreen() {
               style={styles.primaryButton}
               onPress={() => {
                 // Navigate to next step or app walkthrough for now
-                router.push('/(tabs)');
+                router.push('/(auth)/app-walkthrough');
               }}
               activeOpacity={0.8}
             >
@@ -383,11 +383,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 28,
   },
   primaryButtonText: {
     fontFamily: 'PlusJakartaSans_700Bold',
-    fontSize: 12,
+    fontSize: 16,
     color: '#ffffff',
   },
   buttonIcon: {
