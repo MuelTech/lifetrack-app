@@ -1,19 +1,51 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
+import { api } from '../../utils/api';
+import { useAuthStore } from '../../utils/store/authStore';
 
 export default function CreateAccountScreen() {
   const router = useRouter();
+  const setSession = useAuthStore(state => state.setSession);
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleCreateAccount = () => {
-    // Navigate to create-profile for now
-    router.push('/create-profile');
+  const handleCreateAccount = async () => {
+    if (!email || !password || !confirmPassword) {
+      Alert.alert('Error', 'Please fill out all fields.');
+      return;
+    }
+    
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await api.post('/auth/register', { email, password });
+      
+      // Store session token and user directly
+      if (response.data.session && response.data.session.access_token) {
+        setSession(response.data.session.access_token, response.data.user);
+        // Seamlessly navigate to profile creation
+        router.replace('/(auth)/create-profile');
+      } else {
+        Alert.alert('Error', 'An unexpected error occurred. Please log in.');
+        router.replace('/(auth)/login');
+      }
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      Alert.alert('Error', error.response?.data?.error || 'Registration failed.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -117,12 +149,15 @@ export default function CreateAccountScreen() {
           {/* Action Button */}
           <View style={styles.footer}>
             <TouchableOpacity 
-              style={styles.primaryButton}
+              style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
               onPress={handleCreateAccount}
               activeOpacity={0.8}
+              disabled={loading}
             >
-              <Text style={styles.primaryButtonText}>Create Account</Text>
-              <MaterialIcons name="arrow-forward" size={20} color="#ffffff" style={styles.buttonIcon} />
+              <Text style={styles.primaryButtonText}>
+                {loading ? 'Creating...' : 'Create Account'}
+              </Text>
+              {!loading && <MaterialIcons name="arrow-forward" size={20} color="#ffffff" style={styles.buttonIcon} />}
             </TouchableOpacity>
           </View>
         </View>
@@ -234,6 +269,9 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans_600SemiBold',
     fontSize: 16,
     color: '#ffffff',
+  },
+  primaryButtonDisabled: {
+    opacity: 0.7,
   },
   buttonIcon: {
     marginTop: 2,

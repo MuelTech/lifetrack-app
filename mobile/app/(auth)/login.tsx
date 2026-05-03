@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useRouter, Link } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
+import { api } from '../../utils/api';
+import { useAuthStore } from '../../utils/store/authStore';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const setSession = useAuthStore(state => state.setSession);
+  const setHasProfile = useAuthStore(state => state.setHasProfile);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -23,30 +28,33 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      // NOTE: Replace the IP address with your machine's local IP network address or API deployed URL.
-      // 10.0.2.2 works for Android Emulator accessing localhost.
-      const response = await fetch('http://192.168.40.53:3000/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      const response = await api.post('/auth/login', { email, password });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to login');
+      const data = response.data;
+      if (data.session && data.session.access_token) {
+        setSession(data.session.access_token, data.user);
       }
 
-      console.log('Login successful:', data.session);
+      // Check if user has completed profile
+      try {
+        const profileResponse = await api.get('/users/profile/me');
+        if (profileResponse.status === 200) {
+          setHasProfile(true);
+          router.replace('/(tabs)');
+        }
+      } catch (profileError: any) {
+        if (profileError.response && profileError.response.status === 404) {
+          // Profile not found, redirect to create profile mapping
+          setHasProfile(false);
+          router.replace('/(auth)/create-profile');
+        } else {
+          // Let outer catch handle it
+          throw profileError;
+        }
+      }
       
-      // TODO: You may want to save the session token securely to an async storage (or Zustand) here
-      
-      // Proceed to the main tabs app
-      router.replace('/(tabs)');
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.response?.data?.error || err.message || 'Failed to login');
     } finally {
       setLoading(false);
     }

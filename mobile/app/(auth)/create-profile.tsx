@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView, Modal, Pressable, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
+import { api } from '../../utils/api';
+import { useAuthStore } from '../../utils/store/authStore';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 const HEALTH_CONCERNS = ['Diabetes history', 'Hypertension history', 'None'];
 
 export default function CreateProfileScreen() {
   const router = useRouter();
+  const setHasProfile = useAuthStore(state => state.setHasProfile);
+  
   const [nickname, setNickname] = useState('');
   const [yearLevel, setYearLevel] = useState('1st Year');
   const [section, setSection] = useState('');
@@ -16,6 +20,7 @@ export default function CreateProfileScreen() {
   const [selectedConcerns, setSelectedConcerns] = useState<string[]>(['None']);
   
   const [showYearModal, setShowYearModal] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const toggleConcern = (concern: string) => {
     if (concern === 'None') {
@@ -31,6 +36,48 @@ export default function CreateProfileScreen() {
         updated = ['None'];
       }
       setSelectedConcerns(updated);
+    }
+  };
+
+  const handleCreateProfile = async () => {
+    if (!nickname || !age) {
+      Alert.alert('Error', 'Please provide your nickname and age.');
+      return;
+    }
+
+    let mappedSex = 'PREFER_NOT_TO_SAY';
+    if (sex === 'Male') mappedSex = 'MALE';
+    if (sex === 'Female') mappedSex = 'FEMALE';
+
+    const numericAge = parseInt(age, 10);
+    if (isNaN(numericAge) || numericAge < 13) {
+      Alert.alert('Error', 'Please enter a valid age (13+).');
+      return;
+    }
+
+    const payload = {
+      nickname,
+      yearLevel,
+      section,
+      age: numericAge,
+      sex: mappedSex,
+      healthConcerns: selectedConcerns,
+    };
+
+    try {
+      setLoading(true);
+      await api.post('/users/profile', payload);
+      
+      // Update local state to reflect profile completion
+      setHasProfile(true);
+      
+      // Navigate to next step or app walkthrough for now
+      router.replace('/(auth)/app-walkthrough');
+    } catch (error: any) {
+      console.error('Create profile error:', error);
+      Alert.alert('Error', error.response?.data?.error || 'Failed to create profile.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -151,15 +198,15 @@ export default function CreateProfileScreen() {
           {/* Fixed Bottom CTA */}
           <View style={styles.footerContainer}>
             <TouchableOpacity 
-              style={styles.primaryButton}
-              onPress={() => {
-                // Navigate to next step or app walkthrough for now
-                router.push('/(auth)/app-walkthrough');
-              }}
+              style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+              onPress={handleCreateProfile}
               activeOpacity={0.8}
+              disabled={loading}
             >
-              <Text style={styles.primaryButtonText}>Continue</Text>
-              <MaterialIcons name="arrow-forward" size={20} color="#ffffff" style={styles.buttonIcon} />
+              <Text style={styles.primaryButtonText}>
+                {loading ? 'Saving...' : 'Continue'}
+              </Text>
+              {!loading && <MaterialIcons name="arrow-forward" size={20} color="#ffffff" style={styles.buttonIcon} />}
             </TouchableOpacity>
           </View>
         </View>
@@ -389,6 +436,9 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans_700Bold',
     fontSize: 16,
     color: '#ffffff',
+  },
+  primaryButtonDisabled: {
+    opacity: 0.7,
   },
   buttonIcon: {
     marginLeft: 4,

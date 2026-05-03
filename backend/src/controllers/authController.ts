@@ -8,6 +8,33 @@ const loginSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters long'),
 });
 
+export const register = async (req: Request, res: Response) => {
+  try {
+    const validatedData = loginSchema.parse(req.body);
+
+    const { data, error } = await supabase.auth.signUp({
+      email: validatedData.email,
+      password: validatedData.password,
+    });
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    return res.status(201).json({
+      message: 'Registration successful',
+      session: data.session,
+      user: data.user,
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.issues[0]?.message || 'Validation error' });
+    }
+    console.error('Registration error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 export const login = async (req: Request, res: Response) => {
   try {
     // 1. Validate request body against schema
