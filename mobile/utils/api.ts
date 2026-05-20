@@ -3,7 +3,7 @@ import { useAuthStore } from './store/authStore';
 
 // For Android emulator, use 10.0.2.2 instead of localhost
 // Alternatively, replace with your local IP when testing on a physical device
-const API_BASE_URL = 'http://192.168.40.53:3000'; // Hardcoded for local testing
+const API_BASE_URL = 'http://192.168.75.53:3000'; // Hardcoded for local testing
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

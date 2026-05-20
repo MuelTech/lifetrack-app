@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 80,
+    paddingBottom: 120,
   },
   header: {
     marginBottom: 24,

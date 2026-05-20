@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Platform, TextInput, Image } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   scrollContent: {
-    paddingBottom: 80,
+    paddingBottom: 120,
   },
   header: {
     paddingHorizontal: 20,
