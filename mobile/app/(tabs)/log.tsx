@@ -1,22 +1,153 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, SafeAreaView, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, SafeAreaView, Platform, Alert, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { api } from '../../utils/api';
+
+// Helpers
+const getLocalDateString = (d: Date = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const calculateSleepDuration = (start: string, end: string): number => {
+  const [startH, startM] = start.split(':').map(Number);
+  const [endH, endM] = end.split(':').map(Number);
+  
+  if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return 0;
+  
+  let diff = (endH * 60 + endM) - (startH * 60 + startM);
+  if (diff < 0) {
+    diff += 24 * 60; // slept overnight
+  }
+  return Math.round((diff / 60) * 10) / 10;
+};
+
+const formatTimeFromDate = (dateStr: string) => {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
+const titleCase = (str: string) => {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+};
 
 export default function DailyLogScreen() {
   const router = useRouter();
-  
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Form States
   const [sleptAt, setSleptAt] = useState('23:30');
   const [wokeUp, setWokeUp] = useState('07:00');
   
-  const [breakfast, setBreakfast] = useState('Balanced');
-  const [lunch, setLunch] = useState('Junk');
-  const [dinner, setDinner] = useState('');
+  const [breakfast, setBreakfast] = useState('BALANCED');
+  const [lunch, setLunch] = useState('JUNK');
+  const [dinner, setDinner] = useState('BALANCED');
   
   const [waterIntake, setWaterIntake] = useState(4);
-  const [activitySelected, setActivitySelected] = useState('Walk');
+  const [activityDuration, setActivityDuration] = useState(45);
+  const [activitySelected, setActivitySelected] = useState('WALK');
   
-  const [stressLevel, setStressLevel] = useState('Moderate');
+  const [studyHours, setStudyHours] = useState(4.5);
+  const [leisureHours, setLeisureHours] = useState(2.0);
+  const [stressLevel, setStressLevel] = useState('MODERATE');
+
+  useEffect(() => {
+    fetchTodayLog();
+  }, []);
+
+  const fetchTodayLog = async () => {
+    setLoading(true);
+    try {
+      const todayDate = getLocalDateString();
+      const res = await api.get(`/users/logs/today?date=${todayDate}`);
+      if (res.data && res.data.logged) {
+        const log = res.data.log;
+        setSleptAt(formatTimeFromDate(log.sleptAt) || '23:30');
+        setWokeUp(formatTimeFromDate(log.wokeUp) || '07:00');
+        setBreakfast(log.breakfast);
+        setLunch(log.lunch);
+        setDinner(log.dinner);
+        setWaterIntake(log.waterCups);
+        setActivityDuration(log.activityDuration);
+        setActivitySelected(log.activityType[0] || 'NONE');
+        setStudyHours(log.studyHours);
+        setLeisureHours(log.screenTimeHours);
+        setStressLevel(log.stressLevel);
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch today log:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      const dateStr = getLocalDateString();
+      const todayLogDate = new Date();
+      
+      const [sleepH, sleepM] = sleptAt.split(':').map(Number);
+      const sleptDate = new Date(todayLogDate);
+      sleptDate.setHours(isNaN(sleepH) ? 23 : sleepH, isNaN(sleepM) ? 30 : sleepM, 0, 0);
+
+      const [wakeH, wakeM] = wokeUp.split(':').map(Number);
+      const wokeDate = new Date(todayLogDate);
+      wokeDate.setHours(isNaN(wakeH) ? 7 : wakeH, isNaN(wakeM) ? 0 : wakeM, 0, 0);
+
+      // If wake time is earlier than slept time, it means they slept overnight
+      if (wokeDate.getTime() < sleptDate.getTime()) {
+        // sleptDate was yesterday
+        sleptDate.setDate(sleptDate.getDate() - 1);
+      }
+
+      const calculatedSleep = calculateSleepDuration(sleptAt, wokeUp);
+
+      const payload = {
+        date: dateStr,
+        sleptAt: sleptDate.toISOString(),
+        wokeUp: wokeDate.toISOString(),
+        sleepHours: calculatedSleep,
+        breakfast,
+        lunch,
+        dinner,
+        waterCups: waterIntake,
+        activityDuration,
+        activityType: [activitySelected],
+        studyHours,
+        screenTimeHours: leisureHours,
+        stressLevel,
+      };
+
+      await api.post('/users/log', payload);
+      Alert.alert('Success', 'Daily log saved successfully!', [
+        { text: 'OK', onPress: () => router.replace('/(tabs)') }
+      ]);
+    } catch (error: any) {
+      console.error('Submit log error:', error);
+      Alert.alert('Error', error.response?.data?.error || 'Failed to submit log entry.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const totalSleep = calculateSleepDuration(sleptAt, wokeUp);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.centered]}>
+        <ActivityIndicator size="large" color="#6200ee" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -26,9 +157,9 @@ export default function DailyLogScreen() {
           <MaterialIcons name="health-and-safety" size={24} color="#6200ee" />
           <Text style={styles.logoText}>LifeTrack</Text>
         </View>
-        <View style={styles.avatarContainer}>
+        <TouchableOpacity style={styles.avatarContainer} onPress={() => router.push('/profile')}>
           <MaterialIcons name="person" size={20} color="#494456" />
-        </View>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -37,20 +168,9 @@ export default function DailyLogScreen() {
         <View style={styles.headerContainer}>
           <View style={styles.headerTextRow}>
             <Text style={styles.screenTitle}>Today's Log</Text>
-            <Text style={styles.dateText}>Oct 24</Text>
-          </View>
-          
-          {/* Progress Dots */}
-          <View style={styles.progressContainer}>
-            <View style={[styles.progressDot, styles.progressDotActive]} />
-            <View style={styles.progressLine} />
-            <View style={[styles.progressDot, styles.progressDotActive]} />
-            <View style={styles.progressLine} />
-            <View style={[styles.progressDot, styles.progressDotActive]} />
-            <View style={styles.progressLine} />
-            <View style={[styles.progressDot, styles.progressDotActive]} />
-            <View style={styles.progressLine} />
-            <View style={[styles.progressDot, styles.progressDotActive]} />
+            <Text style={styles.dateText}>
+              {new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })}
+            </Text>
           </View>
         </View>
 
@@ -64,22 +184,36 @@ export default function DailyLogScreen() {
              
              <View style={styles.sleepInputsRow}>
                <View style={styles.sleepInputCol}>
-                 <Text style={styles.inputLabel}>SLEPT AT</Text>
-                 <View style={styles.timeInput}>
-                    <Text style={styles.timeText}>{sleptAt}</Text>
+                 <Text style={styles.inputLabel}>SLEPT AT (HH:MM)</Text>
+                 <View style={styles.timeInputContainer}>
+                    <TextInput
+                      style={styles.timeInput}
+                      value={sleptAt}
+                      onChangeText={setSleptAt}
+                      placeholder="23:30"
+                      placeholderTextColor="#cbc3d9"
+                      maxLength={5}
+                    />
                  </View>
                </View>
                <View style={styles.sleepInputCol}>
-                 <Text style={styles.inputLabel}>WOKE UP</Text>
-                 <View style={styles.timeInput}>
-                    <Text style={styles.timeText}>{wokeUp}</Text>
+                 <Text style={styles.inputLabel}>WOKE UP (HH:MM)</Text>
+                 <View style={styles.timeInputContainer}>
+                    <TextInput
+                      style={styles.timeInput}
+                      value={wokeUp}
+                      onChangeText={setWokeUp}
+                      placeholder="07:00"
+                      placeholderTextColor="#cbc3d9"
+                      maxLength={5}
+                    />
                  </View>
                </View>
              </View>
 
              <View style={styles.durationRow}>
                 <Text style={styles.durationLabel}>Total duration</Text>
-                <Text style={styles.durationValue}>7.5 hr</Text>
+                <Text style={styles.durationValue}>{totalSleep} hr</Text>
              </View>
           </View>
 
@@ -91,18 +225,31 @@ export default function DailyLogScreen() {
              </View>
 
              <View style={styles.mealsContainer}>
-                {['Breakfast', 'Lunch', 'Dinner'].map((meal) => (
-                  <View key={meal} style={styles.mealRow}>
-                     <Text style={styles.mealName}>{meal}</Text>
+                {[
+                  { label: 'Breakfast', state: breakfast, setter: setBreakfast },
+                  { label: 'Lunch', state: lunch, setter: setLunch },
+                  { label: 'Dinner', state: dinner, setter: setDinner }
+                ].map((meal) => (
+                  <View key={meal.label} style={styles.mealRow}>
+                     <Text style={styles.mealName}>{meal.label}</Text>
                      <View style={styles.mealChips}>
-                        <TouchableOpacity style={[styles.mealChip, meal === 'Breakfast' ? styles.mealChipSelectedBalanced : {}]}>
-                           <Text style={[styles.mealChipText, meal === 'Breakfast' ? styles.mealChipTextSelectedBalanced : {}]}>Balanced</Text>
+                        <TouchableOpacity 
+                          style={[styles.mealChip, meal.state === 'BALANCED' ? styles.mealChipSelectedBalanced : {}]}
+                          onPress={() => meal.setter('BALANCED')}
+                        >
+                           <Text style={[styles.mealChipText, meal.state === 'BALANCED' ? styles.mealChipTextSelectedBalanced : {}]}>Balanced</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.mealChip, meal === 'Lunch' ? styles.mealChipSelectedJunk : {}]}>
-                           <Text style={[styles.mealChipText, meal === 'Lunch' ? styles.mealChipTextSelectedJunk : {}]}>Junk</Text>
+                        <TouchableOpacity 
+                          style={[styles.mealChip, meal.state === 'JUNK' ? styles.mealChipSelectedJunk : {}]}
+                          onPress={() => meal.setter('JUNK')}
+                        >
+                           <Text style={[styles.mealChipText, meal.state === 'JUNK' ? styles.mealChipTextSelectedJunk : {}]}>Junk</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.mealChip}>
-                           <Text style={styles.mealChipText}>Skipped</Text>
+                        <TouchableOpacity 
+                          style={[styles.mealChip, meal.state === 'SKIPPED' ? styles.mealChipSelectedSkipped : {}]}
+                          onPress={() => meal.setter('SKIPPED')}
+                        >
+                           <Text style={[styles.mealChipText, meal.state === 'SKIPPED' ? styles.mealChipTextSelectedSkipped : {}]}>Skipped</Text>
                         </TouchableOpacity>
                      </View>
                   </View>
@@ -114,10 +261,12 @@ export default function DailyLogScreen() {
                 <View style={styles.waterRow}>
                    <View style={styles.waterDrops}>
                       {[...Array(8)].map((_, i) => (
-                        <MaterialIcons key={i} name="water-drop" size={24} color={i < 4 ? "#006a6a" : "#cbc3d9"} />
+                        <TouchableOpacity key={i} onPress={() => setWaterIntake(i + 1)}>
+                          <MaterialIcons name="water-drop" size={24} color={i < waterIntake ? "#006a6a" : "#cbc3d9"} />
+                        </TouchableOpacity>
                       ))}
                    </View>
-                   <Text style={styles.waterValue}>4 / 8 Cups</Text>
+                   <Text style={styles.waterValue}>{waterIntake} / 8 Cups</Text>
                 </View>
              </View>
           </View>
@@ -129,19 +278,32 @@ export default function DailyLogScreen() {
                   <MaterialIcons name="fitness-center" size={20} color="#6200ee" />
                   <Text style={styles.cardTitle}>Activity</Text>
                 </View>
-                <View style={styles.durationPill}>
-                  <Text style={styles.durationPillText}>45 min</Text>
+                <View style={styles.counterControl}>
+                  <TouchableOpacity onPress={() => setActivityDuration(prev => Math.max(0, prev - 15))}>
+                    <MaterialIcons name="remove" size={18} color="#6200ee" />
+                  </TouchableOpacity>
+                  <Text style={styles.counterValue}>{activityDuration} min</Text>
+                  <TouchableOpacity onPress={() => setActivityDuration(prev => Math.min(240, prev + 15))}>
+                    <MaterialIcons name="add" size={18} color="#6200ee" />
+                  </TouchableOpacity>
                 </View>
-             </View>
-             
-             <View style={styles.sliderContainer}>
-                <View style={styles.mockSlider} />
              </View>
 
              <View style={styles.activityChips}>
-                {['Walk', 'Gym', 'Sports', 'None'].map(act => (
-                  <TouchableOpacity key={act} style={[styles.activityChip, activitySelected === act ? styles.activityChipSelected : {}]}>
-                    <Text style={[styles.activityChipText, activitySelected === act ? styles.activityChipTextSelected : {}]}>{act}</Text>
+                {[
+                  { display: 'Walk', value: 'WALK' },
+                  { display: 'Gym', value: 'GYM' },
+                  { display: 'Sports', value: 'SPORTS' },
+                  { display: 'None', value: 'NONE' }
+                ].map(act => (
+                  <TouchableOpacity 
+                    key={act.value} 
+                    style={[styles.activityChip, activitySelected === act.value ? styles.activityChipSelected : {}]}
+                    onPress={() => setActivitySelected(act.value)}
+                  >
+                    <Text style={[styles.activityChipText, activitySelected === act.value ? styles.activityChipTextSelected : {}]}>
+                      {act.display}
+                    </Text>
                   </TouchableOpacity>
                 ))}
              </View>
@@ -157,20 +319,30 @@ export default function DailyLogScreen() {
              <View style={styles.screenTimeRow}>
                 <View style={styles.screenTimeHeader}>
                   <Text style={styles.inputLabel}>STUDY</Text>
-                  <Text style={styles.screenTimeValue}>4.5 hrs</Text>
-                </View>
-                <View style={styles.sliderContainer}>
-                   <View style={styles.mockSlider} />
+                  <View style={styles.counterControl}>
+                    <TouchableOpacity onPress={() => setStudyHours(prev => Math.max(0, Math.round((prev - 0.5) * 10) / 10))}>
+                      <MaterialIcons name="remove" size={18} color="#7a7488" />
+                    </TouchableOpacity>
+                    <Text style={styles.counterValue}>{studyHours} hrs</Text>
+                    <TouchableOpacity onPress={() => setStudyHours(prev => Math.min(24, Math.round((prev + 0.5) * 10) / 10))}>
+                      <MaterialIcons name="add" size={18} color="#7a7488" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
              </View>
 
              <View style={styles.screenTimeRow}>
                 <View style={styles.screenTimeHeader}>
                   <Text style={styles.inputLabel}>LEISURE</Text>
-                  <Text style={styles.screenTimeValue}>2.0 hrs</Text>
-                </View>
-                <View style={styles.sliderContainer}>
-                   <View style={styles.mockSlider} />
+                  <View style={styles.counterControl}>
+                    <TouchableOpacity onPress={() => setLeisureHours(prev => Math.max(0, Math.round((prev - 0.5) * 10) / 10))}>
+                      <MaterialIcons name="remove" size={18} color="#7a7488" />
+                    </TouchableOpacity>
+                    <Text style={styles.counterValue}>{leisureHours} hrs</Text>
+                    <TouchableOpacity onPress={() => setLeisureHours(prev => Math.min(24, Math.round((prev + 0.5) * 10) / 10))}>
+                      <MaterialIcons name="add" size={18} color="#7a7488" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
              </View>
           </View>
@@ -183,23 +355,35 @@ export default function DailyLogScreen() {
              </View>
 
              <View style={styles.stressRow}>
-                <TouchableOpacity style={styles.stressCard}>
-                   <Text style={styles.stressEmoji}>😌</Text>
-                   <Text style={styles.stressLabelText}>Low</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.stressCard, styles.stressCardSelected]}>
-                   <Text style={styles.stressEmoji}>😐</Text>
-                   <Text style={[styles.stressLabelText, {color: '#002020'}]}>Moderate</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.stressCard}>
-                   <Text style={styles.stressEmoji}>😫</Text>
-                   <Text style={styles.stressLabelText}>High</Text>
-                </TouchableOpacity>
+                {[
+                  { label: 'LOW', display: 'Low', emoji: '😌', color: '#93f2f2', border: '#006a6a' },
+                  { label: 'MODERATE', display: 'Moderate', emoji: '😐', color: '#fff9c4', border: '#fbbc04' },
+                  { label: 'HIGH', display: 'High', emoji: '😫', color: '#ffdad6', border: '#ba1a1a' }
+                ].map((s) => {
+                  const isSel = stressLevel === s.label;
+                  return (
+                    <TouchableOpacity 
+                      key={s.label}
+                      style={[
+                        styles.stressCard, 
+                        isSel ? { opacity: 1, backgroundColor: s.color, borderColor: s.border, borderWidth: 2 } : {}
+                      ]}
+                      onPress={() => setStressLevel(s.label)}
+                    >
+                       <Text style={styles.stressEmoji}>{s.emoji}</Text>
+                       <Text style={styles.stressLabelText}>{s.display}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
              </View>
           </View>
 
-          <TouchableOpacity style={styles.submitBtn}>
-            <Text style={styles.submitBtnText}>Submit Entry</Text>
+          <TouchableOpacity 
+            style={[styles.submitBtn, submitting ? { opacity: 0.7 } : {}]} 
+            onPress={handleSubmit}
+            disabled={submitting}
+          >
+            <Text style={styles.submitBtnText}>{submitting ? 'Submitting...' : 'Submit Entry'}</Text>
             <MaterialIcons name="check-circle" size={20} color="#fff" />
           </TouchableOpacity>
 
@@ -214,6 +398,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
     paddingTop: Platform.OS === 'android' ? 24 : 0,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   appBar: {
     flexDirection: 'row',
@@ -267,30 +455,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#7a7488',
   },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    maxWidth: 280,
-    alignSelf: 'center',
-    marginTop: 12,
-  },
-  progressDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#e1e3e4',
-  },
-  progressDotActive: {
-    backgroundColor: '#6200ee',
-  },
-  progressLine: {
-    flex: 1,
-    height: 2,
-    backgroundColor: '#e1e3e4',
-    marginHorizontal: 4,
-  },
   grid: {
     gap: 12,
   },
@@ -327,18 +491,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     color: '#7a7488',
   },
-  timeInput: {
+  timeInputContainer: {
     borderWidth: 1,
     borderColor: '#e1e3e4',
     borderRadius: 8,
-    padding: 8,
     backgroundColor: '#f8f9fa',
-    alignItems: 'center',
+    overflow: 'hidden',
   },
-  timeText: {
+  timeInput: {
+    height: 40,
     fontFamily: 'PlusJakartaSans_400Regular',
     fontSize: 16,
     color: '#191c1d',
+    textAlign: 'center',
+    padding: 0,
   },
   durationRow: {
     flexDirection: 'row',
@@ -376,14 +542,14 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans_500Medium',
     fontSize: 14,
     color: '#191c1d',
-    width: 80,
+    width: 70,
   },
   mealChips: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 4,
   },
   mealChip: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 16,
     borderWidth: 1,
@@ -407,6 +573,13 @@ const styles = StyleSheet.create({
   },
   mealChipTextSelectedJunk: {
     color: '#93000a',
+  },
+  mealChipSelectedSkipped: {
+    backgroundColor: '#e1e3e4',
+    borderColor: '#cbc3d9',
+  },
+  mealChipTextSelectedSkipped: {
+    color: '#494456',
   },
   waterContainer: {
     borderTopWidth: 1,
@@ -433,25 +606,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  durationPill: {
+  counterControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#e8ddff',
+    borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    gap: 8,
   },
-  durationPillText: {
+  counterValue: {
     fontFamily: 'PlusJakartaSans_700Bold',
     fontSize: 12,
     color: '#6200ee',
-  },
-  sliderContainer: {
-    paddingVertical: 16,
-  },
-  mockSlider: {
-    height: 4,
-    backgroundColor: '#cbc3d9',
-    borderRadius: 2,
-    width: '100%',
   },
   activityChips: {
     flexDirection: 'row',
@@ -485,11 +652,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  screenTimeValue: {
-    fontFamily: 'PlusJakartaSans_700Bold',
-    fontSize: 12,
-    color: '#191c1d',
-  },
   stressRow: {
     flexDirection: 'row',
     gap: 8,
@@ -503,12 +665,6 @@ const styles = StyleSheet.create({
     borderColor: '#cbc3d9',
     backgroundColor: '#f8f9fa',
     opacity: 0.6,
-  },
-  stressCardSelected: {
-    opacity: 1,
-    borderColor: '#006a6a',
-    backgroundColor: '#93f2f2',
-    borderWidth: 2,
   },
   stressEmoji: {
     fontSize: 24,

@@ -1,8 +1,60 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Platform, TextInput, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, SafeAreaView, Platform, ActivityIndicator, Modal, Pressable } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { api } from '../../utils/api';
+
+const CATEGORIES = [
+  { label: 'All', value: 'ALL' },
+  { label: 'Nutrition', value: 'NUTRITION' },
+  { label: 'Sleep', value: 'SLEEP_HYGIENE' },
+  { label: 'Stress', value: 'STRESS_MANAGEMENT' },
+  { label: 'Early Signs', value: 'EARLY_SIGNS' },
+];
 
 export default function GuidanceScreen() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [articles, setArticles] = useState<any[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Article Modal Reader State
+  const [selectedArticle, setSelectedArticle] = useState<any>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+
+  useEffect(() => {
+    fetchArticles();
+  }, [selectedCategory, searchQuery]);
+
+  const fetchArticles = async () => {
+    setLoading(true);
+    try {
+      const categoryParam = selectedCategory !== 'ALL' ? `&category=${selectedCategory}` : '';
+      const searchParam = searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : '';
+      const res = await api.get(`/articles?${categoryParam}${searchParam}`);
+      setArticles(res.data.articles || []);
+    } catch (error) {
+      console.error('Failed to fetch articles:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openArticle = (article: any) => {
+    setSelectedArticle(article);
+    setModalVisible(true);
+  };
+
+  const getCategoryLabel = (categoryValue: string) => {
+    const found = CATEGORIES.find(c => c.value === categoryValue);
+    return found ? found.label : 'General';
+  };
+
+  // Extract featured and latest lists
+  const featuredArticle = articles.find(a => a.featured);
+  const regularArticles = articles.filter(a => a.id !== featuredArticle?.id);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Top AppBar */}
@@ -11,127 +63,165 @@ export default function GuidanceScreen() {
           <MaterialIcons name="health-and-safety" size={24} color="#6200ee" />
           <Text style={styles.logoText}>LifeTrack</Text>
         </View>
-        <View style={styles.avatarContainer}>
+        <TouchableOpacity style={styles.avatarContainer} onPress={() => router.push('/profile')}>
           <MaterialIcons name="person" size={20} color="#494456" />
-        </View>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* Header & Search */}
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Health Guidance</Text>
-          <View style={styles.searchContainer}>
-            <MaterialIcons name="search" size={20} color="#7a7488" style={styles.searchIcon} />
-            <TextInput 
-              style={styles.searchInput}
-              placeholder="Search topics, symptoms..."
-              placeholderTextColor="#cbc3d9"
-            />
-          </View>
+          <Text style={styles.headerTitle}>Wellness Library.</Text>
         </View>
 
-        {/* Categories */}
+        {/* Search Bar */}
+        <View style={styles.searchBarContainer}>
+           <MaterialIcons name="search" size={20} color="#7a7488" style={styles.searchIcon} />
+           <TextInput 
+             style={styles.searchInput}
+             placeholder="Search health guides, tips..."
+             placeholderTextColor="#cbc3d9"
+             value={searchQuery}
+             onChangeText={setSearchQuery}
+           />
+           {searchQuery.length > 0 && (
+             <TouchableOpacity onPress={() => setSearchQuery('')}>
+               <MaterialIcons name="close" size={18} color="#7a7488" />
+             </TouchableOpacity>
+           )}
+        </View>
+
+        {/* Category Filters */}
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false} 
-          style={styles.categoriesContainer}
-          contentContainerStyle={styles.categoriesContent}
+          contentContainerStyle={styles.categoryContainer}
         >
-          <TouchableOpacity style={[styles.categoryChip, styles.categoryChipActive]}>
-            <Text style={[styles.categoryText, styles.categoryTextActive]}>All</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.categoryChip}>
-            <Text style={styles.categoryText}>Nutrition</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.categoryChip}>
-            <Text style={styles.categoryText}>Sleep</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.categoryChip}>
-            <Text style={styles.categoryText}>Stress</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.categoryChip}>
-            <Text style={styles.categoryText}>Exercise</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.categoryChip}>
-            <Text style={styles.categoryText}>Early Signs</Text>
-          </TouchableOpacity>
+          {CATEGORIES.map(cat => {
+            const isSelected = selectedCategory === cat.value;
+            return (
+              <TouchableOpacity 
+                key={cat.value} 
+                style={[styles.categoryChip, isSelected && styles.categoryChipSelected]}
+                onPress={() => setSelectedCategory(cat.value)}
+              >
+                <Text style={[styles.categoryText, isSelected && styles.categoryTextSelected]}>
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
 
-        {/* Featured Article */}
-        <TouchableOpacity style={styles.featuredCard} activeOpacity={0.9}>
-          <View style={styles.featuredImageContainer}>
-            <View style={styles.featuredImagePlaceholder}>
-               <MaterialIcons name="image" size={48} color="#cbc3d9" />
-            </View>
-            <View style={styles.featuredBadge}>
-              <MaterialIcons name="star" size={14} color="#006218" />
-              <Text style={styles.featuredBadgeText}>FEATURED</Text>
-            </View>
+        {loading && articles.length === 0 ? (
+          <ActivityIndicator size="large" color="#6200ee" style={{ marginTop: 40 }} />
+        ) : articles.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="search-off" size={40} color="#7a7488" style={{ marginBottom: 8 }} />
+            <Text style={styles.emptyText}>No articles found matching your criteria.</Text>
           </View>
-          <View style={styles.featuredContent}>
-            <Text style={styles.featuredTitle} numberOfLines={2}>Managing Screen Fatigue During Late Coding Sessions</Text>
-            <Text style={styles.featuredDesc} numberOfLines={2}>Practical strategies to protect your eyes and maintain focus when pushing through complex algorithms past midnight.</Text>
-            <View style={styles.readTimeContainer}>
-              <MaterialIcons name="schedule" size={16} color="#7a7488" />
-              <Text style={styles.readTimeText}>5 min read</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Latest Insights List */}
-        <View style={styles.latestSection}>
-          <Text style={styles.sectionTitle}>Latest Insights</Text>
-          
-          <View style={styles.listContainer}>
-            {/* Article 1 */}
-            <TouchableOpacity style={styles.listCard} activeOpacity={0.9}>
-              <View style={styles.listIconContainerSecondary}>
-                <MaterialIcons name="restaurant-menu" size={24} color="#006a6a" />
+        ) : (
+          <View style={styles.libraryContainer}>
+            {/* Hero / Featured Article */}
+            {featuredArticle && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Featured Guide</Text>
+                <TouchableOpacity 
+                  style={styles.featuredCard} 
+                  activeOpacity={0.9}
+                  onPress={() => openArticle(featuredArticle)}
+                >
+                   <View style={styles.featuredContent}>
+                      <View style={styles.badgeRow}>
+                         <View style={styles.featuredBadge}>
+                            <Text style={styles.featuredBadgeText}>
+                              {getCategoryLabel(featuredArticle.category)}
+                            </Text>
+                         </View>
+                         <Text style={styles.featuredMeta}>{featuredArticle.readTime} min read</Text>
+                      </View>
+                      <Text style={styles.featuredTitle}>{featuredArticle.title}</Text>
+                      <Text style={styles.featuredPreview}>{featuredArticle.preview}</Text>
+                      <View style={styles.readMoreRow}>
+                         <Text style={styles.readMoreText}>Read Guide</Text>
+                         <MaterialIcons name="arrow-forward" size={16} color="#ffffff" />
+                      </View>
+                   </View>
+                </TouchableOpacity>
               </View>
-              <View style={styles.listContent}>
-                <Text style={styles.listTitle} numberOfLines={1}>Quick Brain Food</Text>
-                <Text style={styles.listDesc} numberOfLines={2}>Nutrition-dense snacks that don't require prep time and boost cognitive function.</Text>
-                <View style={styles.readTimeContainer}>
-                  <MaterialIcons name="schedule" size={14} color="#7a7488" />
-                  <Text style={styles.readTimeSmallText}>3 min read</Text>
+            )}
+
+            {/* Library list */}
+            {regularArticles.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Latest Library</Text>
+                <View style={styles.articleList}>
+                  {regularArticles.map((article) => (
+                    <TouchableOpacity 
+                      key={article.id} 
+                      style={styles.articleCard}
+                      onPress={() => openArticle(article)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.articleTextContainer}>
+                         <View style={styles.badgeRow}>
+                            <View style={styles.articleBadge}>
+                               <Text style={styles.articleBadgeText}>
+                                 {getCategoryLabel(article.category)}
+                               </Text>
+                            </View>
+                            <Text style={styles.articleMeta}>{article.readTime} min read</Text>
+                         </View>
+                         <Text style={styles.articleTitle}>{article.title}</Text>
+                         <Text style={styles.articlePreview}>{article.preview}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
-            </TouchableOpacity>
-
-            {/* Article 2 */}
-            <TouchableOpacity style={styles.listCard} activeOpacity={0.9}>
-              <View style={styles.listIconContainerPrimary}>
-                <MaterialIcons name="bedtime" size={24} color="#4800b2" />
-              </View>
-              <View style={styles.listContent}>
-                <Text style={styles.listTitle} numberOfLines={1}>Optimizing Power Naps</Text>
-                <Text style={styles.listDesc} numberOfLines={2}>How 20 minutes can reset your debugging capability without entering deep sleep.</Text>
-                <View style={styles.readTimeContainer}>
-                  <MaterialIcons name="schedule" size={14} color="#7a7488" />
-                  <Text style={styles.readTimeSmallText}>4 min read</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-
-            {/* Article 3 */}
-            <TouchableOpacity style={styles.listCard} activeOpacity={0.9}>
-              <View style={styles.listIconContainerError}>
-                <MaterialIcons name="monitor-heart" size={24} color="#ba1a1a" />
-              </View>
-              <View style={styles.listContent}>
-                <Text style={styles.listTitle} numberOfLines={1}>Recognizing Burnout</Text>
-                <Text style={styles.listDesc} numberOfLines={2}>Early physiological signs that you need to step away from the keyboard immediately.</Text>
-                <View style={styles.readTimeContainer}>
-                  <MaterialIcons name="schedule" size={14} color="#7a7488" />
-                  <Text style={styles.readTimeSmallText}>6 min read</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
+            )}
           </View>
-        </View>
-
+        )}
       </ScrollView>
+
+      {/* Reader Modal */}
+      {selectedArticle && (
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={modalVisible}
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+               <View style={styles.modalHeader}>
+                  <View style={styles.modalBadgeRow}>
+                     <View style={styles.modalCategoryBadge}>
+                        <Text style={styles.modalCategoryBadgeText}>
+                          {getCategoryLabel(selectedArticle.category)}
+                        </Text>
+                     </View>
+                     <Text style={styles.modalMeta}>{selectedArticle.readTime} min read</Text>
+                  </View>
+                  <TouchableOpacity style={styles.closeBtn} onPress={() => setModalVisible(false)}>
+                     <MaterialIcons name="close" size={24} color="#191c1d" />
+                  </TouchableOpacity>
+               </View>
+
+               <ScrollView contentContainerStyle={styles.modalBody} showsVerticalScrollIndicator={false}>
+                  <Text style={styles.modalTitle}>{selectedArticle.title}</Text>
+                  
+                  {/* Divider */}
+                  <View style={styles.modalDivider} />
+
+                  <Text style={styles.modalContentText}>
+                    {selectedArticle.content}
+                  </Text>
+               </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -173,28 +263,27 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   scrollContent: {
+    padding: 20,
     paddingBottom: 120,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
+    marginBottom: 16,
   },
   headerTitle: {
     fontFamily: 'PlusJakartaSans_700Bold',
     fontSize: 24,
     color: '#191c1d',
-    marginBottom: 8,
   },
-  searchContainer: {
+  searchBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e1e3e4',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    height: 44,
+    height: 48,
+    marginBottom: 16,
   },
   searchIcon: {
     marginRight: 8,
@@ -204,165 +293,217 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans_400Regular',
     fontSize: 14,
     color: '#191c1d',
+    padding: 0,
   },
-  categoriesContainer: {
-    marginBottom: 16,
-  },
-  categoriesContent: {
-    paddingHorizontal: 20,
+  categoryContainer: {
+    flexDirection: 'row',
     gap: 8,
+    marginBottom: 24,
   },
   categoryChip: {
-    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#cbc3d9',
-    borderRadius: 9999,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    marginRight: 8,
+    backgroundColor: '#ffffff',
+    height: 36,
   },
-  categoryChipActive: {
-    backgroundColor: '#6200ee',
-    borderColor: '#6200ee',
+  categoryChipSelected: {
+    backgroundColor: '#4800b2',
+    borderColor: '#4800b2',
   },
   categoryText: {
-    fontFamily: 'PlusJakartaSans_700Bold',
+    fontFamily: 'PlusJakartaSans_600SemiBold',
     fontSize: 12,
     color: '#494456',
   },
-  categoryTextActive: {
+  categoryTextSelected: {
     color: '#ffffff',
   },
-  featuredCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e1e3e4',
-    marginHorizontal: 20,
-    marginBottom: 24,
-    overflow: 'hidden',
+  libraryContainer: {
+    gap: 24,
   },
-  featuredImageContainer: {
-    height: 160,
-    position: 'relative',
-    backgroundColor: '#f3f4f5',
-  },
-  featuredImagePlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  featuredBadge: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    gap: 4,
-  },
-  featuredBadgeText: {
-    fontFamily: 'PlusJakartaSans_600SemiBold',
-    fontSize: 11,
-    letterSpacing: 1,
-    color: '#006218',
-  },
-  featuredContent: {
-    padding: 16,
-  },
-  featuredTitle: {
-    fontFamily: 'PlusJakartaSans_600SemiBold',
-    fontSize: 20,
-    color: '#191c1d',
-    marginBottom: 8,
-  },
-  featuredDesc: {
-    fontFamily: 'PlusJakartaSans_400Regular',
-    fontSize: 14,
-    color: '#494456',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  readTimeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  readTimeText: {
-    fontFamily: 'PlusJakartaSans_700Bold',
-    fontSize: 12,
-    color: '#7a7488',
-  },
-  readTimeSmallText: {
-    fontFamily: 'PlusJakartaSans_700Bold',
-    fontSize: 10,
-    color: '#7a7488',
-  },
-  latestSection: {
-    paddingHorizontal: 20,
+  section: {
+    gap: 12,
   },
   sectionTitle: {
     fontFamily: 'PlusJakartaSans_600SemiBold',
     fontSize: 20,
     color: '#191c1d',
-    marginBottom: 12,
   },
-  listContainer: {
-    gap: 12,
-  },
-  listCard: {
-    flexDirection: 'row',
-    backgroundColor: '#ffffff',
+  featuredCard: {
+    backgroundColor: '#4800b2',
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e1e3e4',
-    padding: 12,
-    alignItems: 'flex-start',
-    gap: 12,
+    overflow: 'hidden',
   },
-  listIconContainerSecondary: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
-    backgroundColor: '#90efef',
+  featuredContent: {
+    padding: 20,
+    gap: 8,
+  },
+  badgeRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
   },
-  listIconContainerPrimary: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
-    backgroundColor: '#e8ddff',
-    alignItems: 'center',
-    justifyContent: 'center',
+  featuredBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
-  listIconContainerError: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
-    backgroundColor: '#ffdad6',
-    alignItems: 'center',
-    justifyContent: 'center',
+  featuredBadgeText: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 10,
+    color: '#ffffff',
   },
-  listContent: {
-    flex: 1,
-  },
-  listTitle: {
+  featuredMeta: {
     fontFamily: 'PlusJakartaSans_600SemiBold',
-    fontSize: 16,
-    color: '#191c1d',
-    marginBottom: 4,
+    fontSize: 11,
+    color: '#cbc3d9',
   },
-  listDesc: {
+  featuredTitle: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 22,
+    color: '#ffffff',
+    lineHeight: 28,
+  },
+  featuredPreview: {
     fontFamily: 'PlusJakartaSans_400Regular',
     fontSize: 14,
+    color: '#e8ddff',
+    lineHeight: 20,
+  },
+  readMoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
+  readMoreText: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 12,
+    color: '#ffffff',
+  },
+  articleList: {
+    gap: 12,
+  },
+  articleCard: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e1e3e4',
+    borderRadius: 16,
+    padding: 16,
+  },
+  articleTextContainer: {
+    gap: 8,
+  },
+  articleBadge: {
+    backgroundColor: '#f3f4f5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  articleBadgeText: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 10,
+    color: '#494456',
+  },
+  articleMeta: {
+    fontFamily: 'PlusJakartaSans_600SemiBold',
+    fontSize: 11,
+    color: '#7a7488',
+  },
+  articleTitle: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 16,
+    color: '#191c1d',
+  },
+  articlePreview: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    fontSize: 13,
     color: '#494456',
     lineHeight: 18,
-    marginBottom: 8,
   },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    fontSize: 14,
+    color: '#7a7488',
+    textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '80%',
+    paddingTop: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  modalBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalCategoryBadge: {
+    backgroundColor: '#e8ddff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  modalCategoryBadgeText: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 10,
+    color: '#4800b2',
+  },
+  modalMeta: {
+    fontFamily: 'PlusJakartaSans_600SemiBold',
+    fontSize: 11,
+    color: '#7a7488',
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f3f4f5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBody: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  modalTitle: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 22,
+    color: '#191c1d',
+    lineHeight: 28,
+    marginBottom: 16,
+  },
+  modalDivider: {
+    height: 1,
+    backgroundColor: '#e1e3e4',
+    marginBottom: 16,
+  },
+  modalContentText: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    fontSize: 16,
+    color: '#191c1d',
+    lineHeight: 24,
+  }
 });

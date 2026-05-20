@@ -1,14 +1,146 @@
-import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image, Platform, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { api } from '../../utils/api';
+
+// Date Formatter helper
+const getLocalDateString = (d: Date = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export default function HomeScreen() {
   const router = useRouter();
 
+  const [loading, setLoading] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
+  const [todayLog, setTodayLog] = useState<any>(null);
+  const [hasLoggedToday, setHasLoggedToday] = useState(false);
+  const [weeklyData, setWeeklyData] = useState<any[]>([]);
+
+  // Refresh data whenever screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboardData();
+    }, [])
+  );
+
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch Profile
+      const profileRes = await api.get('/users/profile/me');
+      setProfile(profileRes.data.profile);
+
+      // 2. Fetch Today's Log Status
+      const todayDateStr = getLocalDateString();
+      const todayLogRes = await api.get(`/users/logs/today?date=${todayDateStr}`);
+      if (todayLogRes.data && todayLogRes.data.logged) {
+        setTodayLog(todayLogRes.data.log);
+        setHasLoggedToday(true);
+      } else {
+        setTodayLog(null);
+        setHasLoggedToday(false);
+      }
+
+      // 3. Fetch Weekly Snapshot
+      const historyRes = await api.get('/users/logs/history');
+      const allLogs = historyRes.data.logs || [];
+      
+      // Calculate last 7 calendar days
+      const daysArray = [];
+      const weekdayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+      
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dayStr = getLocalDateString(d);
+        const label = weekdayLabels[d.getDay()];
+        
+        // Find if a log exists for this date string
+        const matchingLog = allLogs.find((l: any) => {
+          // slice "YYYY-MM-DD" from ISO string if returned, or match exactly
+          const logDatePart = l.date.split('T')[0];
+          return logDatePart === dayStr;
+        });
+
+        if (matchingLog) {
+          let color = '#78dc77'; // BALANCED
+          if (matchingLog.patternResult) {
+            if (matchingLog.patternResult.lifestyleStatus === 'NEEDS_IMPROVEMENT') {
+              color = '#fbbc04';
+            } else if (matchingLog.patternResult.lifestyleStatus === 'UNHEALTHY_PATTERN_DETECTED') {
+              color = '#ba1a1a';
+            }
+          }
+          
+          // Height between 15 and 60 depending on sleep hours (cap at 12 hours)
+          const sleepHrs = matchingLog.sleepHours || 0;
+          const height = Math.min(60, Math.max(15, (sleepHrs / 12) * 50 + 10));
+
+          daysArray.push({
+            day: label,
+            height,
+            color,
+          });
+        } else {
+          // No log
+          daysArray.push({
+            day: label,
+            height: 10,
+            color: '#e1e3e4',
+          });
+        }
+      }
+
+      setWeeklyData(daysArray);
+    } catch (error: any) {
+      console.error('Failed to load dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const navigateToLog = () => {
     router.push('/(tabs)/log' as any);
   };
+
+  if (loading && !profile) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.centered]}>
+        <ActivityIndicator size="large" color="#6200ee" />
+      </SafeAreaView>
+    );
+  }
+
+  // Formatting Greeting Details
+  const nickname = profile?.nickname || 'Friend';
+  const streak = profile?.currentStreak || 0;
+
+  // Formatting Today Status Card
+  let statusTitle = 'NO LOG';
+  let statusDesc = 'You have not logged any lifestyle metrics for today. Let us track your sleep, diet, activity, screen time, and stress levels.';
+  let statusColor = '#6200ee';
+  
+  if (hasLoggedToday && todayLog) {
+    const statusVal = todayLog.patternResult?.lifestyleStatus || 'BALANCED';
+    if (statusVal === 'BALANCED') {
+      statusTitle = 'Balanced';
+      statusDesc = 'Your metrics look good overall! Maintain your current sleep, hydration, and active hours.';
+      statusColor = '#6200ee';
+    } else if (statusVal === 'NEEDS_IMPROVEMENT') {
+      statusTitle = 'Needs Improvement';
+      statusDesc = 'Some of your logged habits (like low sleep or hydration) need attention. Take a look at your insights.';
+      statusColor = '#fbbc04';
+    } else {
+      statusTitle = 'Unhealthy Pattern';
+      statusDesc = 'Multiple negative patterns detected today (e.g. high screen time and high stress). Try to wind down early.';
+      statusColor = '#ba1a1a';
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -18,28 +150,32 @@ export default function HomeScreen() {
           <MaterialIcons name="health-and-safety" size={24} color="#6200ee" />
           <Text style={styles.logoText}>LifeTrack</Text>
         </View>
-        <View style={styles.avatarContainer}>
+        <TouchableOpacity style={styles.avatarContainer} onPress={() => router.push('/profile')}>
           <MaterialIcons name="person" size={20} color="#494456" />
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Notification Banner */}
-      <View style={styles.banner}>
-        <View style={styles.bannerLeft}>
-          <MaterialIcons name="error" size={18} color="#93000a" />
-          <Text style={styles.bannerText}>You haven't logged data today yet.</Text>
+      {!hasLoggedToday && (
+        <View style={styles.banner}>
+          <View style={styles.bannerLeft}>
+            <MaterialIcons name="error" size={18} color="#93000a" />
+            <Text style={styles.bannerText}>You haven't logged data today yet.</Text>
+          </View>
+          <TouchableOpacity onPress={navigateToLog}>
+            <Text style={styles.bannerAction}>Log now</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={navigateToLog}>
-          <Text style={styles.bannerAction}>Log now</Text>
-        </TouchableOpacity>
-      </View>
+      )}
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
         {/* Greeting */}
         <View style={styles.greetingContainer}>
-          <Text style={styles.greetingTitle}>Good morning, Alex</Text>
-          <Text style={styles.greetingSubtitle}>Wednesday, Oct 25 • Need to log</Text>
+          <Text style={styles.greetingTitle}>Good morning, {nickname}</Text>
+          <Text style={styles.greetingSubtitle}>
+            {new Date().toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })} • {hasLoggedToday ? 'Logged' : 'Need to log'}
+          </Text>
         </View>
 
         {/* Bento Grid */}
@@ -49,12 +185,12 @@ export default function HomeScreen() {
           <View style={styles.fullCard}>
             <View style={styles.statusHeader}>
               <Text style={styles.cardTitle}>TODAY'S STATUS</Text>
-              <View style={styles.statusPill}>
-                <MaterialIcons name="balance" size={14} color="#6200ee" />
-                <Text style={styles.statusPillText}>Balanced</Text>
+              <View style={[styles.statusPill, { backgroundColor: statusColor + '1c' }]}>
+                <MaterialIcons name="balance" size={14} color={statusColor} />
+                <Text style={[styles.statusPillText, { color: statusColor }]}>{statusTitle}</Text>
               </View>
             </View>
-            <Text style={styles.statusDesc}>Your metrics look good overall, but sleep could be improved based on yesterday's log.</Text>
+            <Text style={styles.statusDesc}>{statusDesc}</Text>
           </View>
 
           {/* Row 1: Sleep & Stress */}
@@ -68,12 +204,20 @@ export default function HomeScreen() {
                 <Text style={styles.cardHeaderTitle}>Sleep</Text>
               </View>
               <View style={styles.cardValueRow}>
-                <Text style={styles.cardValue}>5.5</Text>
+                <Text style={styles.cardValue}>
+                  {hasLoggedToday ? todayLog?.sleepHours : '--'}
+                </Text>
                 <Text style={styles.cardUnit}>hrs</Text>
               </View>
               <View style={styles.trendRow}>
-                <MaterialIcons name="arrow-downward" size={14} color="#ba1a1a" />
-                <Text style={styles.trendText}>-1h from avg</Text>
+                <MaterialIcons 
+                  name={hasLoggedToday && todayLog?.sleepHours >= 7 ? "arrow-upward" : "arrow-downward"} 
+                  size={14} 
+                  color={hasLoggedToday && todayLog?.sleepHours >= 7 ? "#006218" : "#ba1a1a"} 
+                />
+                <Text style={[styles.trendText, { color: hasLoggedToday && todayLog?.sleepHours >= 7 ? "#006218" : "#ba1a1a" }]}>
+                  {hasLoggedToday ? (todayLog?.sleepHours >= 7 ? 'Optimal sleep' : 'Under 7h target') : 'No entry'}
+                </Text>
               </View>
             </View>
 
@@ -85,10 +229,29 @@ export default function HomeScreen() {
                 </View>
                 <Text style={styles.cardHeaderTitle}>Stress</Text>
               </View>
-              <View style={styles.progressBarBg}>
-                <View style={styles.progressBarFill} />
-              </View>
-              <Text style={styles.stressLabel}>Low-Medium</Text>
+              
+              {/* Stress Level Visualizer */}
+              {hasLoggedToday ? (
+                <>
+                  <View style={styles.progressBarBg}>
+                    <View style={[
+                      styles.progressBarFill, 
+                      { 
+                        width: todayLog?.stressLevel === 'LOW' ? '30%' : todayLog?.stressLevel === 'MODERATE' ? '60%' : '100%',
+                        backgroundColor: todayLog?.stressLevel === 'LOW' ? '#006a6a' : todayLog?.stressLevel === 'MODERATE' ? '#fbbc04' : '#ba1a1a' 
+                      }
+                    ]} />
+                  </View>
+                  <Text style={[
+                    styles.stressLabel, 
+                    { color: todayLog?.stressLevel === 'LOW' ? '#006a6a' : todayLog?.stressLevel === 'MODERATE' ? '#c89200' : '#ba1a1a' }
+                  ]}>
+                    {todayLog?.stressLevel ? todayLog.stressLevel.charAt(0) + todayLog.stressLevel.slice(1).toLowerCase() : '--'}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.noValueText}>No entry</Text>
+              )}
             </View>
           </View>
 
@@ -102,8 +265,14 @@ export default function HomeScreen() {
                 </View>
                 <Text style={styles.cardHeaderTitle}>Activity</Text>
               </View>
-              <Text style={styles.activityValue}>Active</Text>
-              <Text style={styles.activitySub}>2 sessions</Text>
+              <Text style={styles.activityValue}>
+                {hasLoggedToday && todayLog?.activityDuration > 0 ? `${todayLog.activityDuration} min` : 'None'}
+              </Text>
+              <Text style={styles.activitySub}>
+                {hasLoggedToday && todayLog?.activityType[0] && todayLog?.activityType[0] !== 'NONE' 
+                  ? todayLog.activityType[0].charAt(0) + todayLog.activityType[0].slice(1).toLowerCase() 
+                  : 'No sessions'}
+              </Text>
             </View>
 
             {/* Streak Card */}
@@ -115,7 +284,7 @@ export default function HomeScreen() {
                 <Text style={styles.cardHeaderTitle}>Streak</Text>
               </View>
               <View style={styles.cardValueRow}>
-                <Text style={styles.cardValue}>12</Text>
+                <Text style={styles.cardValue}>{streak}</Text>
                 <Text style={styles.cardUnit}>days</Text>
               </View>
             </View>
@@ -123,29 +292,32 @@ export default function HomeScreen() {
 
           {/* Weekly Snapshot (Full Width) */}
           <View style={styles.fullCard}>
-             <Text style={[styles.cardTitle, { marginBottom: 12 }]}>WEEKLY SNAPSHOT</Text>
+             <Text style={[styles.cardTitle, { marginBottom: 12 }]}>WEEKLY SNAPSHOT (SLEEP)</Text>
              <View style={styles.chartContainer}>
-                {[ 
-                  { day: 'M', height: 40, color: '#78dc77' },
-                  { day: 'T', height: 50, color: '#78dc77' },
-                  { day: 'W', height: 30, color: '#fbbc04' },
-                  { day: 'T', height: 20, color: '#ba1a1a' },
-                  { day: 'F', height: 45, color: '#78dc77' },
-                  { day: 'S', height: 10, color: '#e1e3e4' },
-                  { day: 'S', height: 10, color: '#e1e3e4' }
-                ].map((item, idx) => (
-                  <View key={idx} style={styles.chartCol}>
-                    <View style={[styles.chartBar, { height: item.height, backgroundColor: item.color }]} />
-                    <Text style={styles.chartDay}>{item.day}</Text>
-                  </View>
-                ))}
+                {weeklyData.length > 0 ? (
+                  weeklyData.map((item, idx) => (
+                    <View key={idx} style={styles.chartCol}>
+                      <View style={[styles.chartBar, { height: item.height, backgroundColor: item.color }]} />
+                      <Text style={styles.chartDay}>{item.day}</Text>
+                    </View>
+                  ))
+                ) : (
+                  [...Array(7)].map((_, idx) => (
+                    <View key={idx} style={styles.chartCol}>
+                      <View style={[styles.chartBar, { height: 10, backgroundColor: '#e1e3e4' }]} />
+                      <Text style={styles.chartDay}>-</Text>
+                    </View>
+                  ))
+                )}
              </View>
           </View>
 
           {/* Log Today CTA */}
           <TouchableOpacity style={styles.ctaButton} onPress={navigateToLog} activeOpacity={0.9}>
              <MaterialIcons name="edit" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-             <Text style={styles.ctaButtonText}>Log Today's Data</Text>
+             <Text style={styles.ctaButtonText}>
+               {hasLoggedToday ? 'Update Today\'s Entry' : 'Log Today\'s Data'}
+             </Text>
           </TouchableOpacity>
 
         </View>
@@ -159,6 +331,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
     paddingTop: Platform.OS === 'android' ? 24 : 0,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   appBar: {
     flexDirection: 'row',
@@ -254,6 +430,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#cbc3d9',
     padding: 12,
+    justifyContent: 'space-between',
+    minHeight: 110,
   },
   statusHeader: {
     flexDirection: 'row',
@@ -270,7 +448,6 @@ const styles = StyleSheet.create({
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#e8ddff',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
@@ -279,7 +456,6 @@ const styles = StyleSheet.create({
   statusPillText: {
     fontFamily: 'PlusJakartaSans_700Bold',
     fontSize: 10,
-    color: '#6200ee',
   },
   statusDesc: {
     fontFamily: 'PlusJakartaSans_400Regular',
@@ -291,7 +467,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   iconWrapper: {
     backgroundColor: '#f3f4f5',
@@ -332,7 +508,6 @@ const styles = StyleSheet.create({
   trendText: {
     fontFamily: 'PlusJakartaSans_700Bold',
     fontSize: 10,
-    color: '#ba1a1a',
   },
   progressBarBg: {
     width: '100%',
@@ -343,15 +518,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   progressBarFill: {
-    width: '40%',
     height: '100%',
-    backgroundColor: '#006a6a',
     borderRadius: 4,
   },
   stressLabel: {
     fontFamily: 'PlusJakartaSans_700Bold',
     fontSize: 10,
-    color: '#006a6a',
+  },
+  noValueText: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    fontSize: 14,
+    color: '#7a7488',
   },
   activityValue: {
     fontFamily: 'PlusJakartaSans_600SemiBold',
@@ -403,4 +580,3 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   }
 });
-

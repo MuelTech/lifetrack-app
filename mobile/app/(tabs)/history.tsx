@@ -1,8 +1,157 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, ScrollView, StyleSheet, SafeAreaView, Platform, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { api } from '../../utils/api';
+
+const getLocalDateString = (d: Date = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export default function HistoryScreen() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [calendarGrid, setCalendarGrid] = useState<any[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchLogsHistory();
+    }, [])
+  );
+
+  const fetchLogsHistory = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/users/logs/history');
+      const allLogs = res.data.logs || [];
+      setLogs(allLogs);
+
+      // Build Calendar Grid for current month
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth(); // 0-indexed
+
+      // Get first day of the month (0 = Sunday, 1 = Monday...)
+      const firstDayIndex = new Date(year, month, 1).getDay();
+      
+      // Get total days in month
+      const totalDays = new Date(year, month + 1, 0).getDate();
+
+      // Get total days in previous month for padding
+      const prevMonthTotalDays = new Date(year, month, 0).getDate();
+
+      const tempGrid = [];
+
+      // 1. Previous month padding days
+      for (let i = firstDayIndex - 1; i >= 0; i--) {
+        const day = prevMonthTotalDays - i;
+        tempGrid.push({
+          day,
+          isCurrentMonth: false,
+          color: '#ffffff',
+          textColor: '#cbc3d9',
+          status: 'none',
+        });
+      }
+
+      // 2. Current month days
+      for (let day = 1; day <= totalDays; day++) {
+        const dateObj = new Date(year, month, day);
+        const dateStr = getLocalDateString(dateObj);
+        
+        // Find matching log
+        const matchingLog = allLogs.find((l: any) => {
+          const logDatePart = l.date.split('T')[0];
+          return logDatePart === dateStr;
+        });
+
+        let color = '#f8f9fa'; // no log
+        let textColor = '#191c1d';
+        let status = 'none';
+
+        if (matchingLog) {
+          const lifestyleStatus = matchingLog.patternResult?.lifestyleStatus || 'BALANCED';
+          if (lifestyleStatus === 'BALANCED') {
+            color = '#e2f4e3'; // light green
+            status = 'good';
+          } else if (lifestyleStatus === 'NEEDS_IMPROVEMENT') {
+            color = '#fff3e0'; // light orange
+            status = 'warning';
+          } else {
+            color = '#ffdad6'; // light red
+            status = 'critical';
+          }
+        }
+
+        // Highlight today
+        const isToday = getLocalDateString() === dateStr;
+
+        tempGrid.push({
+          day,
+          isCurrentMonth: true,
+          color,
+          textColor,
+          status,
+          isToday,
+        });
+      }
+
+      // 3. Next month padding days to complete grid rows (usually 6 rows of 7 = 42 cells or 5 rows = 35 cells)
+      const cellsFilled = tempGrid.length;
+      const totalCellsNeeded = cellsFilled > 35 ? 42 : 35;
+      const nextMonthPadding = totalCellsNeeded - cellsFilled;
+
+      for (let i = 1; i <= nextMonthPadding; i++) {
+        tempGrid.push({
+          day: i,
+          isCurrentMonth: false,
+          color: '#ffffff',
+          textColor: '#cbc3d9',
+          status: 'none',
+        });
+      }
+
+      setCalendarGrid(tempGrid);
+    } catch (error) {
+      console.error('Failed to fetch logs history:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusLabelAndColor = (status: string) => {
+    switch (status) {
+      case 'BALANCED':
+        return { text: 'Balanced', color: '#006218', bg: '#e2f4e3' };
+      case 'NEEDS_IMPROVEMENT':
+        return { text: 'Needs Imp.', color: '#d97d00', bg: '#fff3e0' };
+      case 'UNHEALTHY_PATTERN_DETECTED':
+        return { text: 'Unhealthy', color: '#ba1a1a', bg: '#ffdad6' };
+      default:
+        return { text: 'No Status', color: '#7a7488', bg: '#f8f9fa' };
+    }
+  };
+
+  const formatDateLabel = (dateISOString: string) => {
+    const d = new Date(dateISOString);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+  };
+
+  if (loading && logs.length === 0) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.centered]}>
+        <ActivityIndicator size="large" color="#6200ee" />
+      </SafeAreaView>
+    );
+  }
+
+  const currentMonthName = new Date().toLocaleDateString([], { month: 'long', year: 'numeric' });
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Top AppBar */}
@@ -11,143 +160,109 @@ export default function HistoryScreen() {
           <MaterialIcons name="health-and-safety" size={24} color="#6200ee" />
           <Text style={styles.logoText}>LifeTrack</Text>
         </View>
-        <View style={styles.avatarContainer}>
+        <TouchableOpacity style={styles.avatarContainer} onPress={() => router.push('/profile')}>
           <MaterialIcons name="person" size={20} color="#494456" />
-        </View>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Your History.</Text>
-          <Text style={styles.headerSubtitle}>Review your past wellness data.</Text>
+          <Text style={styles.headerTitle}>Logs History.</Text>
         </View>
 
-        {/* Month Selector & Calendar Bento */}
-        <View style={styles.calendarCard}>
-          {/* Month Selector */}
-          <View style={styles.monthSelector}>
-            <TouchableOpacity style={styles.navButton}>
-              <MaterialIcons name="chevron-left" size={24} color="#494456" />
-            </TouchableOpacity>
-            <Text style={styles.monthText}>November 2023</Text>
-            <TouchableOpacity style={styles.navButton}>
-              <MaterialIcons name="chevron-right" size={24} color="#494456" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Calendar Grid */}
-          <View style={styles.calendarGrid}>
-            {/* Days of Week */}
-            <View style={styles.daysRow}>
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
-                <Text key={i} style={styles.dayLabel}>{day}</Text>
-              ))}
-            </View>
-
-            {/* Dates Grid Row 1 */}
-            <View style={styles.datesRow}>
-              <View style={[styles.dateCircle, styles.dateDimmed]}><Text style={styles.dateTextDimmed}>29</Text></View>
-              <View style={[styles.dateCircle, styles.dateDimmed]}><Text style={styles.dateTextDimmed}>30</Text></View>
-              <View style={[styles.dateCircle, styles.dateDimmed]}><Text style={styles.dateTextDimmed}>31</Text></View>
-              <View style={[styles.dateCircle, styles.dateGood]}><Text style={styles.dateTextWhite}>1</Text></View>
-              <View style={[styles.dateCircle, styles.dateOptimal]}><Text style={styles.dateTextWhite}>2</Text></View>
-              <View style={[styles.dateCircle, styles.dateWarning]}><Text style={styles.dateTextDark}>3</Text></View>
-              <View style={[styles.dateCircle, styles.dateGood]}><Text style={styles.dateTextWhite}>4</Text></View>
-            </View>
-
-            {/* Dates Grid Row 2 */}
-            <View style={styles.datesRow}>
-              <View style={[styles.dateCircle, styles.dateCritical]}><Text style={styles.dateTextWhite}>5</Text></View>
-              <View style={[styles.dateCircle, styles.dateOptimal]}><Text style={styles.dateTextWhite}>6</Text></View>
-              <View style={[styles.dateCircle, styles.dateGood]}><Text style={styles.dateTextWhite}>7</Text></View>
-              <View style={[styles.dateCircle, styles.dateNeutral]}><Text style={styles.dateTextDark}>8</Text></View>
-              <View style={[styles.dateCircle, styles.dateGood]}><Text style={styles.dateTextWhite}>9</Text></View>
-              <View style={[styles.dateCircle, styles.dateOptimal]}><Text style={styles.dateTextWhite}>10</Text></View>
-              <View style={[styles.dateCircle, styles.dateOptimal]}><Text style={styles.dateTextWhite}>11</Text></View>
-            </View>
-
-            {/* Dates Grid Row 3 */}
-            <View style={styles.datesRow}>
-              <View style={[styles.dateCircle, styles.dateGood]}><Text style={styles.dateTextWhite}>12</Text></View>
-              <View style={[styles.dateCircle, styles.dateCritical]}><Text style={styles.dateTextWhite}>13</Text></View>
-              <View style={[styles.dateCircle, styles.dateToday]}><Text style={styles.dateTextDark}>14</Text></View>
-              <View style={[styles.dateCircle, styles.dateDimmed]}><Text style={styles.dateTextDimmed}>15</Text></View>
-              <View style={[styles.dateCircle, styles.dateDimmed]}><Text style={styles.dateTextDimmed}>16</Text></View>
-              <View style={[styles.dateCircle, styles.dateDimmed]}><Text style={styles.dateTextDimmed}>17</Text></View>
-              <View style={[styles.dateCircle, styles.dateDimmed]}><Text style={styles.dateTextDimmed}>18</Text></View>
-            </View>
-          </View>
-
-          {/* Legend */}
-          <View style={styles.legendContainer}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#00480f' }]} />
-              <Text style={styles.legendText}>OPTIMAL</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#006a6a' }]} />
-              <Text style={styles.legendText}>GOOD</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#fbbc04' }]} />
-              <Text style={styles.legendText}>WARNING</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#ba1a1a' }]} />
-              <Text style={styles.legendText}>CRITICAL</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Past Log Entries */}
-        <View style={styles.entriesSection}>
-          <Text style={styles.sectionLabel}>RECENT ENTRIES</Text>
+        {/* Calendar Bento Grid */}
+        <View style={styles.bentoCard}>
+          <Text style={styles.calendarTitle}>{currentMonthName}</Text>
           
-          <View style={styles.entryList}>
-            {/* Entry 1 */}
-            <View style={styles.entryCard}>
-              <View style={styles.entryHeader}>
-                <Text style={styles.entryDate}>Nov 13, 2023</Text>
-                <View style={styles.badgeCritical}>
-                  <Text style={styles.badgeCriticalText}>HIGH STRESS</Text>
-                </View>
-              </View>
-              <View style={styles.entryIcons}>
-                <View style={styles.iconBoxDefault}>
-                  <MaterialIcons name="bed" size={18} color="#494456" />
-                </View>
-                <View style={styles.iconBoxDefault}>
-                  <MaterialIcons name="directions-run" size={18} color="#494456" />
-                </View>
-                <View style={styles.iconBoxCritical}>
-                  <MaterialIcons name="psychology" size={18} color="#93000a" />
-                </View>
-              </View>
-            </View>
-
-            {/* Entry 2 */}
-            <View style={styles.entryCard}>
-              <View style={styles.entryHeader}>
-                <Text style={styles.entryDate}>Nov 12, 2023</Text>
-                <View style={styles.badgeGood}>
-                  <Text style={styles.badgeGoodText}>GOOD DAY</Text>
-                </View>
-              </View>
-              <View style={styles.entryIcons}>
-                <View style={styles.iconBoxDefault}>
-                  <MaterialIcons name="bed" size={18} color="#494456" />
-                </View>
-                <View style={styles.iconBoxGood}>
-                  <MaterialIcons name="directions-walk" size={18} color="#006e6e" />
-                </View>
-                <View style={styles.iconBoxGood}>
-                  <MaterialIcons name="local-dining" size={18} color="#006e6e" />
-                </View>
-              </View>
-            </View>
+          <View style={styles.weekdayHeaders}>
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((w, idx) => (
+              <Text key={idx} style={styles.weekdayText}>{w}</Text>
+            ))}
           </View>
+
+          <View style={styles.calendarGrid}>
+            {calendarGrid.map((item, idx) => (
+              <View 
+                key={idx} 
+                style={[
+                  styles.calendarCell, 
+                  { backgroundColor: item.color },
+                  item.isToday ? { borderWidth: 2, borderColor: '#6200ee' } : {}
+                ]}
+              >
+                <Text style={[styles.cellText, { color: item.textColor }]}>{item.day}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Recent Entries */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Recent Entries</Text>
+          
+          {logs.length > 0 ? (
+            logs.map((log: any) => {
+              const statusObj = getStatusLabelAndColor(log.patternResult?.lifestyleStatus);
+              
+              // Map stress level to simple visual indicator
+              let stressText = 'Low Stress';
+              let stressColor = '#006a6a';
+              if (log.stressLevel === 'MODERATE') {
+                stressText = 'Moderate Stress';
+                stressColor = '#d97d00';
+              } else if (log.stressLevel === 'HIGH') {
+                stressText = 'High Stress';
+                stressColor = '#ba1a1a';
+              }
+
+              return (
+                <View key={log.id} style={styles.entryCard}>
+                   <View style={styles.entryHeader}>
+                      <Text style={styles.entryDate}>{formatDateLabel(log.date)}</Text>
+                      <View style={[styles.badge, { backgroundColor: statusObj.bg }]}>
+                         <Text style={[styles.badgeText, { color: statusObj.color }]}>{statusObj.text}</Text>
+                      </View>
+                   </View>
+
+                   <View style={styles.entryMetricsRow}>
+                      <View style={styles.entryMetricCol}>
+                         <View style={styles.metricIconLabel}>
+                            <MaterialIcons name="bedtime" size={14} color="#6200ee" />
+                            <Text style={styles.metricLabel}>SLEEP</Text>
+                         </View>
+                         <Text style={styles.metricValue}>{log.sleepHours} hrs</Text>
+                      </View>
+
+                      <View style={styles.entryMetricCol}>
+                         <View style={styles.metricIconLabel}>
+                            <MaterialIcons name="directions-walk" size={14} color="#006218" />
+                            <Text style={styles.metricLabel}>ACTIVE</Text>
+                         </View>
+                         <Text style={styles.metricValue}>
+                           {log.activityDuration > 0 ? `${log.activityDuration} min` : 'None'}
+                         </Text>
+                      </View>
+
+                      <View style={styles.entryMetricCol}>
+                         <View style={styles.metricIconLabel}>
+                            <MaterialIcons name="psychology" size={14} color={stressColor} />
+                            <Text style={styles.metricLabel}>STRESS</Text>
+                         </View>
+                         <Text style={[styles.metricValue, { color: stressColor }]}>
+                           {log.stressLevel.charAt(0) + log.stressLevel.slice(1).toLowerCase()}
+                         </Text>
+                      </View>
+                   </View>
+                </View>
+              );
+            })
+          ) : (
+            <View style={styles.emptyContainer}>
+              <MaterialIcons name="history" size={40} color="#7a7488" style={{ marginBottom: 8 }} />
+              <Text style={styles.emptyText}>No logs submitted yet. Start tracking today!</Text>
+            </View>
+          )}
         </View>
 
       </ScrollView>
@@ -160,6 +275,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
     paddingTop: Platform.OS === 'android' ? 24 : 0,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   appBar: {
     flexDirection: 'row',
@@ -203,13 +322,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: '#191c1d',
   },
-  headerSubtitle: {
-    fontFamily: 'PlusJakartaSans_400Regular',
-    fontSize: 14,
-    color: '#494456',
-    marginTop: 4,
-  },
-  calendarCard: {
+  bentoCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
     borderWidth: 1,
@@ -217,196 +330,119 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 24,
   },
-  monthSelector: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  navButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  monthText: {
+  calendarTitle: {
     fontFamily: 'PlusJakartaSans_600SemiBold',
     fontSize: 16,
     color: '#191c1d',
+    marginBottom: 12,
   },
-  calendarGrid: {
-    marginBottom: 16,
-  },
-  daysRow: {
+  weekdayHeaders: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 8,
   },
-  dayLabel: {
+  weekdayText: {
     fontFamily: 'PlusJakartaSans_600SemiBold',
-    fontSize: 11,
-    color: '#494456',
+    fontSize: 12,
+    color: '#7a7488',
     width: 32,
     textAlign: 'center',
   },
-  datesRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  dateCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dateDimmed: {
-    borderWidth: 1,
-    borderColor: '#cbc3d9',
-    borderStyle: 'dashed',
-  },
-  dateTextDimmed: {
-    fontFamily: 'PlusJakartaSans_400Regular',
-    fontSize: 14,
-    color: '#494456',
-    opacity: 0.5,
-  },
-  dateGood: {
-    backgroundColor: '#006a6a',
-  },
-  dateOptimal: {
-    backgroundColor: '#00480f',
-  },
-  dateWarning: {
-    backgroundColor: '#fbbc04',
-  },
-  dateCritical: {
-    backgroundColor: '#ba1a1a',
-  },
-  dateNeutral: {
-    backgroundColor: '#e1e3e4',
-  },
-  dateToday: {
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
-    borderColor: '#4800b2',
-  },
-  dateTextWhite: {
-    fontFamily: 'PlusJakartaSans_400Regular',
-    fontSize: 14,
-    color: '#ffffff',
-  },
-  dateTextDark: {
-    fontFamily: 'PlusJakartaSans_400Regular',
-    fontSize: 14,
-    color: '#191c1d',
-  },
-  legendContainer: {
+  calendarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
-    paddingHorizontal: 4,
+    justifyContent: 'space-between',
+    rowGap: 8,
   },
-  legendItem: {
-    flexDirection: 'row',
+  calendarCell: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
   },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  cellText: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 12,
   },
-  legendText: {
-    fontFamily: 'PlusJakartaSans_600SemiBold',
-    fontSize: 10,
-    color: '#494456',
-    letterSpacing: 1,
-  },
-  entriesSection: {
-    gap: 8,
-  },
-  sectionLabel: {
-    fontFamily: 'PlusJakartaSans_600SemiBold',
-    fontSize: 11,
-    color: '#494456',
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  entryList: {
+  section: {
+    marginBottom: 24,
     gap: 12,
   },
+  sectionTitle: {
+    fontFamily: 'PlusJakartaSans_600SemiBold',
+    fontSize: 20,
+    color: '#191c1d',
+    marginBottom: 4,
+  },
   entryCard: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e1e3e4',
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    marginBottom: 12,
+  },
+  entryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e1e3e4',
-    padding: 16,
-  },
-  entryHeader: {
-    gap: 4,
   },
   entryDate: {
-    fontFamily: 'PlusJakartaSans_700Bold',
-    fontSize: 12,
+    fontFamily: 'PlusJakartaSans_600SemiBold',
+    fontSize: 14,
     color: '#191c1d',
   },
-  badgeCritical: {
-    backgroundColor: '#ffdad6',
+  badge: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 9999,
-    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    borderRadius: 4,
   },
-  badgeCriticalText: {
-    fontFamily: 'PlusJakartaSans_600SemiBold',
+  badgeText: {
+    fontFamily: 'PlusJakartaSans_700Bold',
     fontSize: 10,
-    color: '#93000a',
   },
-  badgeGood: {
-    backgroundColor: '#90efef',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 9999,
-    alignSelf: 'flex-start',
-  },
-  badgeGoodText: {
-    fontFamily: 'PlusJakartaSans_600SemiBold',
-    fontSize: 10,
-    color: '#006e6e',
-  },
-  entryIcons: {
+  entryMetricsRow: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f5',
+    paddingTop: 12,
   },
-  iconBoxDefault: {
-    width: 32,
-    height: 32,
-    borderRadius: 4,
-    backgroundColor: '#edeeef',
+  entryMetricCol: {
+    flex: 1,
+    gap: 4,
+  },
+  metricIconLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metricLabel: {
+    fontFamily: 'PlusJakartaSans_600SemiBold',
+    fontSize: 9,
+    letterSpacing: 0.5,
+    color: '#7a7488',
+  },
+  metricValue: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 14,
+    color: '#191c1d',
+  },
+  emptyContainer: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e1e3e4',
+    borderRadius: 16,
+    padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconBoxCritical: {
-    width: 32,
-    height: 32,
-    borderRadius: 4,
-    backgroundColor: '#ffdad6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconBoxGood: {
-    width: 32,
-    height: 32,
-    borderRadius: 4,
-    backgroundColor: '#90efef',
-    alignItems: 'center',
-    justifyContent: 'center',
+  emptyText: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    fontSize: 14,
+    color: '#494456',
+    textAlign: 'center',
   }
 });

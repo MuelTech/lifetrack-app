@@ -1,8 +1,112 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Platform, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { api } from '../../utils/api';
 
 export default function InsightsScreen() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [insights, setInsights] = useState<any>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchInsights();
+    }, [])
+  );
+
+  const fetchInsights = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/users/insights');
+      setInsights(res.data);
+    } catch (error) {
+      console.error('Failed to fetch insights:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading && !insights) {
+    return (
+      <SafeAreaView style={[styles.safeArea, styles.centered]}>
+        <ActivityIndicator size="large" color="#6200ee" />
+      </SafeAreaView>
+    );
+  }
+
+  const lifestyleStatus = insights?.lifestyleStatus || 'BALANCED';
+  const activePatterns = insights?.activePatterns || [];
+  const recommendations = insights?.recommendations || [
+    'Maintain your regular log entries to build patterns.',
+    'Try drinking 8 cups of water today.',
+    'Aim to sleep before midnight.'
+  ];
+
+  // Map status values for visual elements
+  let statusText = 'Balanced Routine';
+  let statusDesc = 'Your routine is stable. Keep tracking to maintain your healthy habits.';
+  let statusBadge = 'Normal';
+  let statusColor = '#00480f'; // green
+  let statusBg = '#e2f4e3';
+  let barWidth = '100%';
+
+  if (lifestyleStatus === 'NEEDS_IMPROVEMENT') {
+    statusText = 'Needs Improvement';
+    statusDesc = 'We noticed minor irregularities in sleep or hydration. Focus on consistent hydration and regular sleep.';
+    statusBadge = 'Minor Risks';
+    statusColor = '#FF8F00'; // orange
+    statusBg = '#fff3e0';
+    barWidth = '60%';
+  } else if (lifestyleStatus === 'UNHEALTHY_PATTERN_DETECTED') {
+    statusText = 'Unhealthy Patterns';
+    statusDesc = 'Multiple critical warnings detected regarding sleep, high screen hours, and physical inactivity.';
+    statusBadge = 'High Warning';
+    statusColor = '#ba1a1a'; // red
+    statusBg = '#ffdad6';
+    barWidth = '30%';
+  }
+
+  // Details for rendering patterns
+  const PATTERN_DETAILS: { [key: string]: { icon: string, title: string, desc: string, isWarning: boolean } } = {
+    'Sleep Deprivation': {
+      icon: 'bedtime',
+      title: 'Sleep Deprivation',
+      desc: 'You have slept under 6 hours on average over your recent entries.',
+      isWarning: false, // critical/red
+    },
+    'Dehydration Trend': {
+      icon: 'water-drop',
+      title: 'Dehydration Trend',
+      desc: 'Your average water intake is below the recommended 5 cups.',
+      isWarning: true, // warning/orange
+    },
+    'Excessive Screen Time': {
+      icon: 'devices',
+      title: 'Excessive Screen Time',
+      desc: 'You are spending a high amount of leisure screen time (>4 hours/day).',
+      isWarning: true,
+    },
+    'Poor Nutrition': {
+      icon: 'restaurant',
+      title: 'Poor Nutrition',
+      desc: 'You have skipped meals or eaten junk food frequently in the past few days.',
+      isWarning: true,
+    },
+    'Sedentary Lifestyle': {
+      icon: 'directions-run',
+      title: 'Sedentary Lifestyle',
+      desc: 'Your physical activity level is low (average <15 mins/day).',
+      isWarning: true,
+    },
+    'High Stress Alert': {
+      icon: 'psychology',
+      title: 'High Stress Alert',
+      desc: 'Your stress level is currently reported as High.',
+      isWarning: false,
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Top AppBar */}
@@ -11,9 +115,9 @@ export default function InsightsScreen() {
           <MaterialIcons name="health-and-safety" size={24} color="#6200ee" />
           <Text style={styles.logoText}>LifeTrack</Text>
         </View>
-        <View style={styles.avatarContainer}>
+        <TouchableOpacity style={styles.avatarContainer} onPress={() => router.push('/profile')}>
           <MaterialIcons name="person" size={20} color="#494456" />
-        </View>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -26,18 +130,16 @@ export default function InsightsScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
             <View>
-              <Text style={styles.cardTitleText}>Weekly Summary</Text>
-              <Text style={styles.cardSubtitleText}>Oct 16 - Oct 22</Text>
+              <Text style={styles.cardTitleText}>{statusText}</Text>
+              <Text style={styles.cardSubtitleText}>Overall Routine Health</Text>
             </View>
-            <View style={styles.badgeError}>
-              <Text style={styles.badgeErrorText}>High Stress</Text>
+            <View style={[styles.badge, { backgroundColor: statusBg }]}>
+              <Text style={[styles.badgeText, { color: statusColor }]}>{statusBadge}</Text>
             </View>
           </View>
-          <Text style={styles.cardBodyText}>
-            Your routine has been irregular this week, particularly concerning sleep and hydration levels. Focus on stabilization.
-          </Text>
+          <Text style={styles.cardBodyText}>{statusDesc}</Text>
           <View style={styles.progressBarBg}>
-             <View style={styles.progressBarFillError} />
+             <View style={[styles.progressBarFill, { width: barWidth as any, backgroundColor: statusColor }]} />
           </View>
         </View>
 
@@ -45,45 +147,36 @@ export default function InsightsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Detected Patterns</Text>
           
-          {/* Pattern 1 */}
-          <View style={styles.patternCard}>
-            <View style={styles.patternAccentError} />
-            <View style={styles.patternContent}>
-              <View style={styles.patternIconError}>
-                <MaterialIcons name="bedtime" size={20} color="#ba1a1a" />
-              </View>
-              <View style={styles.patternTextContainer}>
-                <Text style={styles.patternTitle}>Sleep Deprivation</Text>
-                <Text style={styles.patternDesc}>
-                  You've slept under 6 hours for 4 consecutive days.
-                </Text>
-                <TouchableOpacity style={styles.guidanceBtn}>
-                  <Text style={styles.guidanceBtnText}>View Guidance</Text>
-                  <MaterialIcons name="expand-more" size={20} color="#006a6a" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
+          {activePatterns.length > 0 ? (
+            activePatterns.map((patName: string) => {
+              const details = PATTERN_DETAILS[patName] || {
+                icon: 'warning',
+                title: patName,
+                desc: 'Unhealthy lifestyle trend detected.',
+                isWarning: true,
+              };
 
-          {/* Pattern 2 */}
-          <View style={styles.patternCard}>
-            <View style={styles.patternAccentWarning} />
-            <View style={styles.patternContent}>
-              <View style={styles.patternIconWarning}>
-                <MaterialIcons name="water-drop" size={20} color="#FF8F00" />
-              </View>
-              <View style={styles.patternTextContainer}>
-                <Text style={styles.patternTitle}>Dehydration Trend</Text>
-                <Text style={styles.patternDesc}>
-                  Water intake is 30% below your target during afternoon hours.
-                </Text>
-                <TouchableOpacity style={styles.guidanceBtn}>
-                  <Text style={styles.guidanceBtnText}>View Guidance</Text>
-                  <MaterialIcons name="expand-more" size={20} color="#006a6a" />
-                </TouchableOpacity>
-              </View>
+              return (
+                <View key={patName} style={styles.patternCard}>
+                  <View style={details.isWarning ? styles.patternAccentWarning : styles.patternAccentError} />
+                  <View style={styles.patternContent}>
+                    <View style={details.isWarning ? styles.patternIconWarning : styles.patternIconError}>
+                      <MaterialIcons name={details.icon as any} size={20} color={details.isWarning ? '#FF8F00' : '#ba1a1a'} />
+                    </View>
+                    <View style={styles.patternTextContainer}>
+                      <Text style={styles.patternTitle}>{details.title}</Text>
+                      <Text style={styles.patternDesc}>{details.desc}</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+          ) : (
+            <View style={styles.emptyContainer}>
+              <MaterialIcons name="check-circle" size={40} color="#006218" style={{ marginBottom: 8 }} />
+              <Text style={styles.emptyText}>All systems nominal! No unhealthy patterns detected in your recent logs.</Text>
             </View>
-          </View>
+          )}
         </View>
 
         {/* Recommendations */}
@@ -91,35 +184,27 @@ export default function InsightsScreen() {
            <Text style={styles.sectionTitle}>Personalized Recommendations</Text>
            
            <View style={styles.recommendationList}>
-              <View style={styles.recItem}>
-                 <View style={styles.recIconWrapDefault}>
-                    <MaterialIcons name="nights-stay" size={18} color="#6200ee" />
-                 </View>
-                 <Text style={styles.recText}>Sleep before 12AM × 3 nights</Text>
-                 <TouchableOpacity style={styles.recAddBtn}>
-                    <MaterialIcons name="add" size={16} color="#7a7488" />
-                 </TouchableOpacity>
-              </View>
+              {recommendations.map((recText: string, idx: number) => {
+                // Pick icon colors based on index
+                const iconColors = [
+                  { bg: 'rgba(98, 0, 238, 0.1)', color: '#6200ee', icon: 'nights-stay' },
+                  { bg: 'rgba(0, 98, 24, 0.1)', color: '#006218', icon: 'directions-walk' },
+                  { bg: 'rgba(186, 26, 26, 0.2)', color: '#ba1a1a', icon: 'local-cafe' },
+                ];
+                const opt = iconColors[idx % iconColors.length];
 
-              <View style={styles.recItem}>
-                 <View style={styles.recIconWrapTertiary}>
-                    <MaterialIcons name="directions-walk" size={18} color="#006218" />
-                 </View>
-                 <Text style={styles.recText}>15-min walk after class</Text>
-                 <TouchableOpacity style={styles.recAddBtn}>
-                    <MaterialIcons name="add" size={16} color="#7a7488" />
-                 </TouchableOpacity>
-              </View>
-
-              <View style={styles.recItem}>
-                 <View style={styles.recIconWrapError}>
-                    <MaterialIcons name="local-cafe" size={18} color="#ba1a1a" />
-                 </View>
-                 <Text style={styles.recText}>Reduce sugary drinks</Text>
-                 <TouchableOpacity style={styles.recAddBtn}>
-                    <MaterialIcons name="add" size={16} color="#7a7488" />
-                 </TouchableOpacity>
-              </View>
+                return (
+                  <View key={idx} style={styles.recItem}>
+                     <View style={[styles.recIconWrap, { backgroundColor: opt.bg }]}>
+                        <MaterialIcons name={opt.icon as any} size={18} color={opt.color} />
+                     </View>
+                     <Text style={styles.recText}>{recText}</Text>
+                     <TouchableOpacity style={styles.recAddBtn}>
+                        <MaterialIcons name="add" size={16} color="#7a7488" />
+                     </TouchableOpacity>
+                  </View>
+                );
+              })}
            </View>
         </View>
 
@@ -133,6 +218,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
     paddingTop: Platform.OS === 'android' ? 24 : 0,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   appBar: {
     flexDirection: 'row',
@@ -201,16 +290,14 @@ const styles = StyleSheet.create({
     color: '#494456',
     marginTop: 4,
   },
-  badgeError: {
-    backgroundColor: '#ffdad6',
+  badge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 9999,
   },
-  badgeErrorText: {
+  badgeText: {
     fontFamily: 'PlusJakartaSans_700Bold',
     fontSize: 12,
-    color: '#93000a',
   },
   cardBodyText: {
     fontFamily: 'PlusJakartaSans_400Regular',
@@ -226,10 +313,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     overflow: 'hidden',
   },
-  progressBarFillError: {
-    width: '75%',
+  progressBarFill: {
     height: '100%',
-    backgroundColor: '#ba1a1a',
     borderRadius: 4,
   },
   section: {
@@ -301,22 +386,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#494456',
     marginTop: 4,
-    marginBottom: 16,
   },
-  guidanceBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(144, 239, 239, 0.2)',
+  emptyContainer: {
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#90efef',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: '#e1e3e4',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  guidanceBtnText: {
-    fontFamily: 'PlusJakartaSans_700Bold',
-    fontSize: 12,
-    color: '#006a6a',
+  emptyText: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    fontSize: 14,
+    color: '#00480f',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   recommendationList: {
     gap: 12,
@@ -331,27 +416,10 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 12,
   },
-  recIconWrapDefault: {
+  recIconWrap: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(98, 0, 238, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recIconWrapTertiary: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0, 98, 24, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recIconWrapError: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(186, 26, 26, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
