@@ -28,31 +28,48 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
+      // 1. Authenticate with the backend
       const response = await api.post('/auth/login', { email, password });
-
       const data = response.data;
-      if (data.session && data.session.access_token) {
-        setSession(data.session.access_token, data.user);
+
+      if (!data.session || !data.session.access_token) {
+        setErrorMsg('Login failed: no session returned.');
+        return;
       }
 
-      // Check if user has completed profile
+      const token = data.session.access_token;
+      const user = data.user;
+
+      // 2. Check if the user already has a profile BEFORE setting session.
+      //    We must pass the token manually since setSession hasn't been called yet
+      //    and the axios interceptor reads from the store (which is still empty).
+      let profileExists = false;
       try {
-        const profileResponse = await api.get('/users/profile/me');
-        if (profileResponse.status === 200) {
-          setHasProfile(true);
-          router.replace('/(tabs)');
+        const profileRes = await api.get('/users/profile/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (profileRes.status === 200 && profileRes.data.profile) {
+          profileExists = true;
         }
       } catch (profileError: any) {
-        if (profileError.response && profileError.response.status === 404) {
-          // Profile not found, redirect to create profile mapping
-          setHasProfile(false);
-          router.replace('/(auth)/create-profile');
-        } else {
-          // Let outer catch handle it
+        // 404 = profile doesn't exist yet (new user) → stay false
+        if (!profileError.response || profileError.response.status !== 404) {
           throw profileError;
         }
       }
-      
+
+      // 3. Now set session AND hasProfile atomically so the NavigationGuard
+      //    sees the correct, complete state in a single render cycle.
+      setSession(token, user);
+      setHasProfile(profileExists);
+
+      // 4. Navigate based on profile existence
+      if (profileExists) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/(auth)/create-profile');
+      }
+
     } catch (err: any) {
       setErrorMsg(err.response?.data?.error || err.message || 'Failed to login');
     } finally {
