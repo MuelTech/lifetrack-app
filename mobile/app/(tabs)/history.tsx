@@ -141,7 +141,6 @@ export default function HistoryScreen() {
     if (isNaN(d.getTime())) return '';
     return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
   };
-
   if (loading && logs.length === 0) {
     return (
       <SafeAreaView style={[styles.safeArea, styles.centered]}>
@@ -151,6 +150,12 @@ export default function HistoryScreen() {
   }
 
   const currentMonthName = new Date().toLocaleDateString([], { month: 'long', year: 'numeric' });
+
+  // Helper to chunk calendar grid into weeks (rows of 7 days)
+  const weeks: any[][] = [];
+  for (let i = 0; i < calendarGrid.length; i += 7) {
+    weeks.push(calendarGrid.slice(i, i + 7));
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -182,16 +187,20 @@ export default function HistoryScreen() {
           </View>
 
           <View style={styles.calendarGrid}>
-            {calendarGrid.map((item, idx) => (
-              <View 
-                key={idx} 
-                style={[
-                  styles.calendarCell, 
-                  { backgroundColor: item.color },
-                  item.isToday ? { borderWidth: 2, borderColor: '#6200ee' } : {}
-                ]}
-              >
-                <Text style={[styles.cellText, { color: item.textColor }]}>{item.day}</Text>
+            {weeks.map((week, weekIdx) => (
+              <View key={weekIdx} style={styles.calendarRow}>
+                {week.map((item, idx) => (
+                  <View 
+                    key={idx} 
+                    style={[
+                      styles.calendarCell, 
+                      { backgroundColor: item.color },
+                      item.isToday ? { borderWidth: 2, borderColor: '#6200ee' } : {}
+                    ]}
+                  >
+                    <Text style={[styles.cellText, { color: item.textColor }]}>{item.day}</Text>
+                  </View>
+                ))}
               </View>
             ))}
           </View>
@@ -349,10 +358,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   calendarGrid: {
+    flexDirection: 'column',
+    gap: 8,
+  },
+  calendarRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 8,
   },
   calendarCell: {
     width: 32,

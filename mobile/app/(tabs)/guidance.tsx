@@ -15,6 +15,32 @@ const CATEGORIES = [
 export default function GuidanceScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+
+  const renderFormattedContent = (text: string) => {
+    if (!text) return null;
+    
+    // Split by newlines to preserve paragraphs
+    const paragraphs = text.split('\n');
+    
+    return paragraphs
+      .filter(para => para.trim() !== '')
+      .map((para, paraIdx) => {
+        const parts = para.split('**');
+        
+        return (
+          <Text key={paraIdx} style={styles.modalParagraph}>
+            {parts.map((part, partIdx) => {
+              const isBold = partIdx % 2 === 1;
+              return (
+                <Text key={partIdx} style={isBold ? styles.boldText : null}>
+                  {part}
+                </Text>
+              );
+            })}
+          </Text>
+        );
+      });
+  };
   const [articles, setArticles] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -214,9 +240,9 @@ export default function GuidanceScreen() {
                   {/* Divider */}
                   <View style={styles.modalDivider} />
 
-                  <Text style={styles.modalContentText}>
-                    {selectedArticle.content}
-                  </Text>
+                  <View>
+                    {renderFormattedContent(selectedArticle.content)}
+                  </View>
                </ScrollView>
             </View>
           </View>
@@ -500,10 +526,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#e1e3e4',
     marginBottom: 16,
   },
-  modalContentText: {
+  modalParagraph: {
     fontFamily: 'PlusJakartaSans_400Regular',
     fontSize: 16,
     color: '#191c1d',
     lineHeight: 24,
+    marginBottom: 12,
+  },
+  boldText: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontWeight: 'bold',
   }
 });
