@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { api } from '../utils/api';
 import { useAuthStore } from '../utils/store/authStore';
@@ -13,9 +13,11 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [])
+  );
 
   const fetchProfile = async () => {
     setLoading(true);
@@ -68,9 +70,14 @@ export default function ProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile & Settings</Text>
-        <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-          <MaterialIcons name="close" size={24} color="#191c1d" />
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/edit-profile')}>
+            <MaterialIcons name="edit" size={24} color="#6200ee" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
+            <MaterialIcons name="close" size={24} color="#191c1d" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -170,7 +177,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#191c1d',
   },
-  closeButton: {
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconButton: {
     padding: 4,
   },
   scrollContent: {

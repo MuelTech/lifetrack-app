@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image, Platform, ActivityIndicator, BackHandler, ToastAndroid, Alert } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '../../utils/api';
@@ -20,11 +20,41 @@ export default function HomeScreen() {
   const [todayLog, setTodayLog] = useState<any>(null);
   const [hasLoggedToday, setHasLoggedToday] = useState(false);
   const [weeklyData, setWeeklyData] = useState<any[]>([]);
+  const [goals, setGoals] = useState<any[]>([]);
 
   // Refresh data whenever screen gains focus
   useFocusEffect(
     useCallback(() => {
       loadDashboardData();
+
+      let backPressCount = 0;
+      let backPressTimer: NodeJS.Timeout;
+
+      const onBackPress = () => {
+        if (Platform.OS === 'android') {
+          if (backPressCount === 0) {
+            backPressCount++;
+            ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
+            
+            backPressTimer = setTimeout(() => {
+              backPressCount = 0;
+            }, 2000);
+            
+            return true; // Prevent default (popping screen)
+          } else {
+            clearTimeout(backPressTimer);
+            BackHandler.exitApp();
+            return true;
+          }
+        }
+        return false;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => {
+        subscription.remove();
+        if (backPressTimer) clearTimeout(backPressTimer);
+      };
     }, [])
   );
 
@@ -97,11 +127,54 @@ export default function HomeScreen() {
       }
 
       setWeeklyData(daysArray);
+
+      // 4. Fetch Active Goals
+      const goalsRes = await api.get('/users/goals');
+      setGoals(goalsRes.data.goals || []);
     } catch (error: any) {
       console.error('Failed to load dashboard data:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleGoal = async (id: string) => {
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, isCompleted: !g.isCompleted } : g));
+    try {
+      await api.put(`/users/goals/${id}/toggle`);
+    } catch (e) {
+      setGoals(prev => prev.map(g => g.id === id ? { ...g, isCompleted: !g.isCompleted } : g));
+      console.error('Failed to toggle goal', e);
+    }
+  };
+
+  const removeGoal = (id: string) => {
+    Alert.alert(
+      "Remove Goal",
+      "Are you sure you want to stop tracking this daily habit?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Remove", 
+          style: "destructive",
+          onPress: async () => {
+            const previousGoals = [...goals];
+            setGoals(prev => prev.filter(g => g.id !== id));
+            try {
+              await api.delete(`/users/goals/${id}`);
+              if (Platform.OS === 'android') {
+                ToastAndroid.show('Goal removed', ToastAndroid.SHORT);
+              }
+            } catch (e) {
+              setGoals(previousGoals);
+              if (Platform.OS === 'android') {
+                ToastAndroid.show('Failed to remove goal', ToastAndroid.SHORT);
+              }
+            }
+          }
+        }
+      ]
+    );
   };
 
   const navigateToLog = () => {
@@ -290,7 +363,38 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Weekly Snapshot (Full Width) */}
+          {/* Active Goals Tracker */}
+          {goals.length > 0 && (
+            <View style={styles.fullCard}>
+              <Text style={[styles.cardTitle, { marginBottom: 12 }]}>MY ACTIVE GOALS</Text>
+              <View style={styles.goalsContainer}>
+                {goals.map((goal) => (
+                  <TouchableOpacity 
+                    key={goal.id} 
+                    style={[styles.goalItem, goal.isCompleted && styles.goalItemCompleted]}
+                    onPress={() => toggleGoal(goal.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.checkbox, goal.isCompleted && styles.checkboxCompleted]}>
+                      {goal.isCompleted && <MaterialIcons name="check" size={14} color="#ffffff" />}
+                    </View>
+                    <Text style={[styles.goalText, goal.isCompleted && styles.goalTextCompleted]}>
+                      {goal.title}
+                    </Text>
+                    <TouchableOpacity 
+                      style={styles.deleteGoalBtn} 
+                      onPress={() => removeGoal(goal.id)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <MaterialIcons name="close" size={18} color="#ba1a1a" />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Weekly Snapshot (Sleep) */}
           <View style={styles.fullCard}>
              <Text style={[styles.cardTitle, { marginBottom: 12 }]}>WEEKLY SNAPSHOT (SLEEP)</Text>
              <View style={styles.chartContainer}>
@@ -578,5 +682,51 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans_600SemiBold',
     fontSize: 16,
     color: '#ffffff',
+  },
+  goalsContainer: {
+    gap: 8,
+  },
+  goalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e1e3e4',
+  },
+  goalItemCompleted: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#7a7488',
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxCompleted: {
+    backgroundColor: '#006218',
+    borderColor: '#006218',
+  },
+  goalText: {
+    fontFamily: 'PlusJakartaSans_600SemiBold',
+    fontSize: 14,
+    color: '#191c1d',
+    flex: 1,
+  },
+  goalTextCompleted: {
+    color: '#006218',
+    textDecorationLine: 'line-through',
+  },
+  deleteGoalBtn: {
+    padding: 4,
+    marginLeft: 8,
+    borderRadius: 12,
+    backgroundColor: '#ffdad6',
   }
 });

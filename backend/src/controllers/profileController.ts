@@ -80,3 +80,43 @@ export const createProfile = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ error: 'Internal server error while creating profile' });
   }
 };
+
+export const updateProfile = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const validatedData = createProfileSchema.parse(req.body);
+
+    const existingProfile = await prisma.profile.findUnique({
+      where: { id: userId },
+    });
+
+    if (!existingProfile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const updatedProfile = await prisma.profile.update({
+      where: { id: userId },
+      data: {
+        ...validatedData,
+        section: validatedData.section ?? null,
+      },
+    });
+
+    return res.status(200).json({
+      message: 'Profile updated successfully',
+      profile: updatedProfile,
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.issues[0]?.message || 'Validation error' });
+    }
+    
+    console.error('Update profile error:', error);
+    return res.status(500).json({ error: 'Internal server error while updating profile' });
+  }
+};

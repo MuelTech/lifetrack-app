@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getProfile, createProfile } from '../controllers/profileController.js';
+import { getProfile, createProfile, updateProfile } from '../controllers/profileController.js';
 import { requireAuth } from '../middleware/authMiddleware.js';
 
 const router = Router();
@@ -12,5 +12,8 @@ router.get('/profile/me', getProfile);
 
 // POST /users/profile
 router.post('/profile', createProfile);
+
+// PUT /users/profile/me
+router.put('/profile/me', updateProfile);
 
 export default router;

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -24,12 +24,9 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
   const hasProfile = useAuthStore(state => state.hasProfile);
 
   useEffect(() => {
-    if (segments.length === 0) return;
-
     const rootGroup = segments[0];
     const screenName = segments[1];
 
-    const inAuthGroup = rootGroup === '(auth)';
     const inTabsGroup = rootGroup === '(tabs)';
     
     // Check if the current screen is part of the profile setup flow
@@ -56,7 +53,7 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
         // User is logged in and has profile completed
         // Send them to dashboard tabs. If they land on login, register, or welcome, redirect to tabs
         const isRootWelcome = rootGroup === 'index' || segments.join('/') === '';
-        const isAuthCredentialScreen = screenName === 'login' || screenName === 'create-account';
+        const isAuthCredentialScreen = rootGroup === '(auth)' || screenName === 'login' || screenName === 'create-account';
         
         if (isRootWelcome || isAuthCredentialScreen || isProfileSetupScreen) {
           router.replace('/(tabs)');
@@ -76,13 +73,23 @@ export default function RootLayout() {
     PlusJakartaSans_700Bold,
   });
 
+  const [isHydrated, setIsHydrated] = useState(useAuthStore.persist.hasHydrated());
+
+  useEffect(() => {
+    const unsub = useAuthStore.persist.onFinishHydration(() => setIsHydrated(true));
+    setIsHydrated(useAuthStore.persist.hasHydrated());
+    return () => {
+      unsub();
+    };
+  }, []);
+
   useEffect(() => {
     if (error) throw error;
 
-    if (fontsLoaded) {
+    if (fontsLoaded && isHydrated) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, error]);
+  }, [fontsLoaded, error, isHydrated]);
 
   // Background Auto-Syncer
   useEffect(() => {
@@ -117,7 +124,7 @@ export default function RootLayout() {
     return () => clearInterval(interval);
   }, []);
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded || !isHydrated) {
     return null;
   }
 
@@ -126,6 +133,8 @@ export default function RootLayout() {
       <NavigationGuard>
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" options={{ title: 'Welcome' }} />
+          <Stack.Screen name="(auth)" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
           <Stack.Screen name="profile" options={{ title: 'Profile', presentation: 'modal' }} />
         </Stack>
       </NavigationGuard>

@@ -4,6 +4,7 @@ import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import logRoutes from './routes/logRoutes.js';
 import articleRoutes from './routes/articleRoutes.js';
+import goalRoutes from './routes/goalRoutes.js';
 import 'dotenv/config';
 
 const app = express();
@@ -17,6 +18,7 @@ app.use(express.json());
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/users', logRoutes);
+app.use('/users/goals', goalRoutes);
 app.use('/articles', articleRoutes);
 
 // Health check

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Platform, ActivityIndicator, ToastAndroid } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '../../utils/api';
@@ -8,6 +8,7 @@ export default function InsightsScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState<any>(null);
+  const [addedGoals, setAddedGoals] = useState<string[]>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -18,12 +19,39 @@ export default function InsightsScreen() {
   const fetchInsights = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/users/insights');
-      setInsights(res.data);
+      const [insightsRes, goalsRes] = await Promise.all([
+        api.get('/users/insights'),
+        api.get('/users/goals')
+      ]);
+      
+      setInsights(insightsRes.data);
+      
+      // Map active goals to sync the checkmarks
+      if (goalsRes.data && goalsRes.data.goals) {
+        const activeGoalTitles = goalsRes.data.goals.map((g: any) => g.title);
+        setAddedGoals(activeGoalTitles);
+      }
     } catch (error) {
-      console.error('Failed to fetch insights:', error);
+      console.error('Failed to fetch insights data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddGoal = async (recText: string) => {
+    if (addedGoals.includes(recText)) return;
+    
+    try {
+      await api.post('/users/goals', { title: recText });
+      setAddedGoals((prev) => [...prev, recText]);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Added to your Active Goals!', ToastAndroid.SHORT);
+      }
+    } catch (error) {
+      console.error('Failed to add goal:', error);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Failed to add goal.', ToastAndroid.SHORT);
+      }
     }
   };
 
@@ -193,14 +221,20 @@ export default function InsightsScreen() {
                 ];
                 const opt = iconColors[idx % iconColors.length];
 
+                const isAdded = addedGoals.includes(recText);
+
                 return (
                   <View key={idx} style={styles.recItem}>
                      <View style={[styles.recIconWrap, { backgroundColor: opt.bg }]}>
                         <MaterialIcons name={opt.icon as any} size={18} color={opt.color} />
                      </View>
                      <Text style={styles.recText}>{recText}</Text>
-                     <TouchableOpacity style={styles.recAddBtn}>
-                        <MaterialIcons name="add" size={16} color="#7a7488" />
+                     <TouchableOpacity 
+                       style={[styles.recAddBtn, isAdded && styles.recAddedBtn]} 
+                       onPress={() => handleAddGoal(recText)}
+                       disabled={isAdded}
+                     >
+                        <MaterialIcons name={isAdded ? "check" : "add"} size={16} color={isAdded ? "#ffffff" : "#7a7488"} />
                      </TouchableOpacity>
                   </View>
                 );
@@ -437,5 +471,9 @@ const styles = StyleSheet.create({
     borderColor: '#7a7488',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  recAddedBtn: {
+    backgroundColor: '#006218',
+    borderColor: '#006218',
   }
 });
