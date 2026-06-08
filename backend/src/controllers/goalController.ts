@@ -83,7 +83,7 @@ export const toggleGoal = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     const goal = await prisma.goal.findUnique({
       where: { id },
@@ -115,7 +115,7 @@ export const deleteGoal = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     const goal = await prisma.goal.findUnique({
       where: { id },
