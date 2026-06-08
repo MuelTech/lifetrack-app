@@ -9,7 +9,10 @@ import {
   PlusJakartaSans_700Bold,
 } from '@expo-google-fonts/plus-jakarta-sans';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Network from 'expo-network';
 import { useAuthStore } from '../utils/store/authStore';
+import { useSyncStore } from '../utils/store/syncStore';
+import { api } from '../utils/api';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -80,6 +83,39 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, error]);
+
+  // Background Auto-Syncer
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    const syncLogs = async () => {
+      const state = useSyncStore.getState();
+      const queuedLogs = state.queuedLogs;
+      
+      if (queuedLogs.length === 0) return;
+
+      const networkState = await Network.getNetworkStateAsync();
+      if (networkState.isConnected) {
+        for (const log of queuedLogs) {
+          try {
+            await api.post('/users/log', log.payload);
+            state.removeLog(log.id); // Remove on success
+            console.log(`Synced log ${log.id} successfully.`);
+          } catch (error) {
+            console.error(`Failed to sync log ${log.id}:`, error);
+          }
+        }
+      }
+    };
+
+    // Try to sync on mount
+    syncLogs();
+
+    // Polling every 15 seconds
+    interval = setInterval(syncLogs, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   if (!fontsLoaded) {
     return null;

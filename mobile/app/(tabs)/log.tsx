@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, SafeAr
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '../../utils/api';
+import * as Network from 'expo-network';
+import { useSyncStore } from '../../utils/store/syncStore';
 
 // Helpers
 const getLocalDateString = (d: Date = new Date()) => {
@@ -127,10 +129,20 @@ export default function DailyLogScreen() {
         stressLevel,
       };
 
-      await api.post('/users/log', payload);
-      Alert.alert('Success', 'Daily log saved successfully!', [
-        { text: 'OK', onPress: () => router.replace('/(tabs)') }
-      ]);
+      const networkState = await Network.getNetworkStateAsync();
+
+      if (networkState.isConnected) {
+        await api.post('/users/log', payload);
+        Alert.alert('Success', 'Daily log saved successfully!', [
+          { text: 'OK', onPress: () => router.replace('/(tabs)') }
+        ]);
+      } else {
+        const addLog = useSyncStore.getState().addLog;
+        addLog(payload);
+        Alert.alert('Offline Mode', 'You are offline. Your log has been saved locally and will sync when you reconnect.', [
+          { text: 'OK', onPress: () => router.replace('/(tabs)') }
+        ]);
+      }
     } catch (error: any) {
       console.error('Submit log error:', error);
       Alert.alert('Error', error.response?.data?.error || 'Failed to submit log entry.');
