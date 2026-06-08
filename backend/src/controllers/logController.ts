@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/db.js';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import { LifestyleStatus, MealQuality, ActivityType, StressLevel } from '@prisma/client';
+import { PatternDetectionEngine } from '../services/PatternDetectionEngine.js';
 
 // Helper to get date only at midnight UTC
 const getDateOnly = (dateInput?: string | Date): Date => {
@@ -128,58 +129,7 @@ export const postLog = async (req: AuthRequest, res: Response) => {
       take: 4,
     });
 
-    const activePatterns: string[] = [];
-
-    if (recentLogs.length > 0) {
-      // Rule 1: Sleep Deprivation (average sleepHours < 6.0 in the recent logs)
-      const avgSleep = recentLogs.reduce((sum, item) => sum + item.sleepHours, 0) / recentLogs.length;
-      if (avgSleep < 6.0) {
-        activePatterns.push('Sleep Deprivation');
-      }
-
-      // Rule 2: Dehydration Trend (average waterCups < 5.0)
-      const avgWater = recentLogs.reduce((sum, item) => sum + item.waterCups, 0) / recentLogs.length;
-      if (avgWater < 5.0) {
-        activePatterns.push('Dehydration Trend');
-      }
-
-      // Rule 3: Excessive Screen Time (average screenTimeHours > 4.0 or studyHours + screenTimeHours > 8.0)
-      const avgLeisureScreen = recentLogs.reduce((sum, item) => sum + item.screenTimeHours, 0) / recentLogs.length;
-      const avgTotalScreen = recentLogs.reduce((sum, item) => sum + (item.studyHours + item.screenTimeHours), 0) / recentLogs.length;
-      if (avgLeisureScreen > 4.0 || avgTotalScreen > 8.0) {
-        activePatterns.push('Excessive Screen Time');
-      }
-
-      // Rule 4: Poor Nutrition (junk/skipped meals count >= 4 in recent logs)
-      let badMealsCount = 0;
-      recentLogs.forEach(item => {
-        if (item.breakfast === MealQuality.JUNK || item.breakfast === MealQuality.SKIPPED) badMealsCount++;
-        if (item.lunch === MealQuality.JUNK || item.lunch === MealQuality.SKIPPED) badMealsCount++;
-        if (item.dinner === MealQuality.JUNK || item.dinner === MealQuality.SKIPPED) badMealsCount++;
-      });
-      if (badMealsCount >= 4) {
-        activePatterns.push('Poor Nutrition');
-      }
-
-      // Rule 5: Sedentary Lifestyle (average activityDuration < 15.0 mins)
-      const avgActivity = recentLogs.reduce((sum, item) => sum + item.activityDuration, 0) / recentLogs.length;
-      if (avgActivity < 15.0) {
-        activePatterns.push('Sedentary Lifestyle');
-      }
-    }
-
-    // Rule 6: High Stress Alert (today's stressLevel is HIGH)
-    if (log.stressLevel === StressLevel.HIGH) {
-      activePatterns.push('High Stress Alert');
-    }
-
-    // Determine status
-    let status: LifestyleStatus = LifestyleStatus.BALANCED;
-    if (activePatterns.length === 1) {
-      status = LifestyleStatus.NEEDS_IMPROVEMENT;
-    } else if (activePatterns.length >= 2) {
-      status = LifestyleStatus.UNHEALTHY_PATTERN_DETECTED;
-    }
+    const { status, patterns: activePatterns } = PatternDetectionEngine.evaluate(recentLogs, log as any);
 
     // 4. Upsert PatternResult
     const patternResult = await prisma.patternResult.upsert({
